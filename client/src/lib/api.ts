@@ -9,8 +9,17 @@ import type {
 
 const cache = new Map<string, Promise<unknown>>();
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function fetchJson<T>(url: string, timeoutMs = 25_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch {
+    throw new Error('Keine Antwort vom Server – bitte nochmal versuchen.');
+  } finally {
+    clearTimeout(timer);
+  }
   let body: unknown = null;
   try {
     body = await res.json();

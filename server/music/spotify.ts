@@ -103,9 +103,12 @@ export class SpotifyProvider implements MusicProvider {
   private token: { value: string; expiresAt: number } | null = null;
   private tokenPromise: Promise<string> | null = null;
   private cache = new TtlCache(8000);
-  private limiter = new Limiter(10);
+  // Wenige gleichzeitige Anfragen → Spotify drosselt uns nicht (Development Mode hat strenge Limits)
+  private limiter = new Limiter(4);
+  /** Bis wann Spotify uns gerade bremst (Rate-Limit) */
+  private cooldownUntil = 0;
   /** Max. Seitengröße für Listen – wird automatisch verkleinert, falls Spotify 50 ablehnt */
-  private pageSize = 50;
+  private pageSize = 20;
   // Nur zum Testen überschreibbar
   private api = process.env.SPOTIFY_API_BASE || DEFAULT_API;
   private tokenUrl = process.env.SPOTIFY_TOKEN_URL || DEFAULT_TOKEN_URL;
@@ -175,8 +178,26 @@ export class SpotifyProvider implements MusicProvider {
 
   // ---------- HTTP mit Retry bei 401 / 429 / 5xx ----------
 
+  /** Sekunden, die Spotify uns noch bremst (0 = alles frei) */
+  get cooldownSeconds(): number {
+    return Math.max(0, Math.ceil((this.cooldownUntil - Date.now()) / 1000));
+  }
+
+  private rateLimitError(): ProviderError {
+    return new ProviderError(
+      503,
+      `Spotify bremst gerade (zu viele Anfragen). Bitte in ${this.cooldownSeconds} Sekunden nochmal versuchen.`,
+    );
+  }
+
   private async request<T>(pathOrUrl: string, attempt = 0): Promise<T> {
     const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${this.api}${pathOrUrl}`;
+    // Während Spotify bremst: kurz warten oder sofort ehrlich Bescheid geben, statt ewig zu laden
+    const wait = this.cooldownUntil - Date.now();
+    if (wait > 0) {
+      if (wait > 3000) throw this.rateLimitError();
+      await sleep(wait);
+    }
     const token = await this.getToken();
     let res: Response;
     try {
@@ -196,11 +217,15 @@ export class SpotifyProvider implements MusicProvider {
       this.token = null;
       return this.request<T>(pathOrUrl, attempt + 1);
     }
-    if (res.status === 429 && attempt < 4) {
+    if (res.status === 429) {
       const retryAfter = Number(res.headers.get('retry-after')) || 2;
-      console.warn(`[spotify] Rate-Limit erreicht – warte ${retryAfter}s`);
-      await sleep(Math.min(retryAfter, 30) * 1000 + Math.random() * 300);
-      return this.request<T>(pathOrUrl, attempt + 1);
+      this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + retryAfter * 1000);
+      console.warn(`[spotify] Rate-Limit erreicht – Spotify sagt: ${retryAfter}s warten`);
+      if (retryAfter <= 3 && attempt < 3) {
+        await sleep(retryAfter * 1000 + Math.random() * 300);
+        return this.request<T>(pathOrUrl, attempt + 1);
+      }
+      throw this.rateLimitError();
     }
     if (res.status >= 500 && attempt < 2) {
       await sleep(600 * (attempt + 1));
@@ -240,7 +265,7 @@ export class SpotifyProvider implements MusicProvider {
         break;
       } catch (err) {
         if (err instanceof ProviderError && err.status === 502 && /limit/i.test(err.message) && this.pageSize > 10) {
-          console.warn('[spotify] Seitengröße 50 abgelehnt – nutze ab jetzt 10');
+          console.warn(`[spotify] Seitengröße ${this.pageSize} abgelehnt – nutze ab jetzt 10`);
           this.pageSize = 10;
           limit = Math.min(this.pageSize, count);
           continue;
@@ -313,16 +338,21 @@ export class SpotifyProvider implements MusicProvider {
         names.push(name);
         if (names.length >= 16) break;
       }
-      const results: Array<ArtistSummary | null> = await Promise.all(
-        names.map(async (name) => {
-          try {
-            const hits = await this.rawSearch(name);
-            return hits.find((a) => normName(a.name) === normName(name)) ?? null;
-          } catch {
-            return null;
-          }
-        }),
-      );
+      // Nacheinander in kleinen Gruppen, damit Spotify nicht bremst
+      const results: Array<ArtistSummary | null> = [];
+      for (let i = 0; i < Math.min(names.length, 12); i += 3) {
+        const chunk = await Promise.all(
+          names.slice(i, i + 3).map(async (name) => {
+            try {
+              const hits = await this.rawSearch(name);
+              return hits.find((a) => normName(a.name) === normName(name)) ?? null;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        results.push(...chunk);
+      }
       const list = results.filter((a): a is ArtistSummary => !!a);
       if (list.length === 0) throw new ProviderError(502, 'Konnte keine Vorschläge laden');
       return list;

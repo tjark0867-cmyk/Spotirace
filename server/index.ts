@@ -26,6 +26,7 @@ const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 
 let provider: MusicProvider;
 let recheckLogin = () => {};
+let cooldown = () => 0;
 for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
 if (forceDemo) {
   provider = new DemoProvider();
@@ -33,6 +34,7 @@ if (forceDemo) {
 } else if (clientId && clientSecret) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market);
   provider = spotify;
+  cooldown = () => spotify.cooldownSeconds;
   console.log(`🎧 Musikdaten: Spotify (Markt: ${market || 'alle'})`);
   // Login gleich beim Start testen, damit die Startseite sagen kann, ob die Keys stimmen
   let lastCheck = 0;
@@ -63,6 +65,7 @@ const handler = createHttpHandler(provider, () => {
     demo: isDemo,
     missingKeys: !isDemo && (provider.name === 'missing' || setup.login === 'failed'),
     setup: isDemo ? null : setup,
+    cooldownSeconds: cooldown(),
   };
 });
 const server = createServer((req, res) => void handler(req, res));

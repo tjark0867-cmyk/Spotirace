@@ -14,7 +14,7 @@ import { demoSvg } from './music/demo';
 import { ProviderError, type MusicProvider } from './music/types';
 
 const DIST_DIR = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE = 20;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

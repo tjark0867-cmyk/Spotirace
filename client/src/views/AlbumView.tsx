@@ -119,17 +119,6 @@ export function AlbumView({
     if (data) onLoaded?.(data);
   }, [data, onLoaded]);
 
-  // Die Artists, zu denen man von hier springen kann, schon mal vorladen → nach dem Klick ist die Seite sofort da
-  useEffect(() => {
-    if (!data || !canMove) return;
-    const ids = new Set<string>();
-    for (const t of data.tracks) {
-      if (!t.artists.some((a) => a.id === current.id)) continue;
-      for (const a of t.artists) if (a.id !== current.id) ids.add(a.id);
-    }
-    [...ids].slice(0, 6).forEach((id) => api.artistPage(id).catch(() => {}));
-  }, [data, current.id, canMove]);
-
   if (error) {
     return (
       <div className="px-8 py-24 text-center">

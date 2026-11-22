@@ -178,4 +178,6 @@ export interface AppConfig {
   /** true, wenn Spotify (noch) nicht benutzbar ist: Keys fehlen oder Login klappt nicht */
   missingKeys: boolean;
   setup: SetupStatus | null;
+  /** Sekunden, die Spotify gerade noch bremst (Rate-Limit), sonst 0 */
+  cooldownSeconds: number;
 }

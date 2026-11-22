@@ -24,6 +24,7 @@ export function Home() {
   const [demo, setDemo] = useState(false);
   const [missingKeys, setMissingKeys] = useState(false);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
     api
@@ -32,6 +33,7 @@ export function Home() {
         setDemo(c.demo);
         setMissingKeys(c.missingKeys);
         setSetup(c.setup);
+        setCooldown(c.cooldownSeconds ?? 0);
       })
       .catch(() => {});
   }, []);
@@ -86,6 +88,12 @@ export function Home() {
         </p>
 
         {missingKeys && setup && <SetupBox setup={setup} />}
+
+        {cooldown > 0 && !missingKeys && (
+          <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">
+            <b>Spotify bremst gerade</b> (zu viele Anfragen). In etwa {Math.ceil(cooldown / 60)} Minute(n) geht es wieder normal.
+          </div>
+        )}
 
         {demo && (
           <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">

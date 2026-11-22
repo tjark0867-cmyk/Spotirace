@@ -74,10 +74,8 @@ function ReleaseCard({ release, group, onOpen }: { release: ReleaseSummary; grou
     <button
       type="button"
       onClick={onOpen}
-      // Album schon laden, sobald der Finger/die Maus drauf ist → öffnet sich fast sofort
-      onPointerEnter={() => api.album(release.id).catch(() => {})}
+      // Album schon beim Draufdrücken laden → öffnet sich schneller
       onPointerDown={() => api.album(release.id).catch(() => {})}
-      onFocus={() => api.album(release.id).catch(() => {})}
       className="group flex flex-col rounded-md p-2.5 text-left transition hover:bg-sp-hover focus-visible:bg-sp-hover focus-visible:outline-none sm:p-3"
     >
       <div className="relative mb-3">
