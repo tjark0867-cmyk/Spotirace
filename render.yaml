@@ -1,0 +1,20 @@
+# Render-Blueprint: Spotirace als kostenlosen Web-Service starten
+# Render → New → Blueprint → dieses Repo auswählen → Keys eintragen → Deploy
+services:
+  - type: web
+    name: spotirace
+    runtime: node
+    plan: free
+    # Die Oberfläche liegt schon fertig gebaut in dist/ – hier werden nur die Server-Pakete installiert
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SPOTIFY_MARKET
+        value: DE
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false

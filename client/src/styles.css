@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* Spotify-inspirierte Farben und Schrift */
+@theme {
+  --font-sans: "Figtree", "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+
+  --color-sp-black: #000000;
+  --color-sp-base: #121212;
+  --color-sp-card: #181818;
+  --color-sp-elevated: #1f1f1f;
+  --color-sp-hover: #282828;
+  --color-sp-highlight: #2a2a2a;
+  --color-sp-border: #333333;
+  --color-sp-sub: #b3b3b3;
+  --color-sp-muted: #7a7a7a;
+  --color-sp-green: #1db954;
+  --color-sp-green-bright: #1ed760;
+  --color-sp-red: #f15e6c;
+
+  --animate-pop: pop 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  --animate-fade-up: fade-up 0.35s ease-out both;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-confetti: confetti 2.8s ease-in forwards;
+
+  @keyframes pop {
+    0% { transform: scale(0.4); opacity: 0; }
+    35% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+  @keyframes confetti {
+    0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate3d(var(--dx, 0), 105vh, 0) rotate(var(--rot, 540deg)); opacity: 0.9; }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-sp-black text-white antialiased;
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  ::selection {
+    background: var(--color-sp-green);
+    color: #000;
+  }
+}
+
+@layer components {
+  /* Spotify-typische dünne Scrollbar */
+  .sp-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
+  .sp-scroll::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .sp-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  .sp-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.45);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, #1f1f1f 0px, #2a2a2a 120px, #1f1f1f 240px);
+    background-size: 800px 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  .sp-input {
+    @apply w-full rounded-md border border-transparent bg-sp-highlight px-4 py-3 text-base text-white placeholder:text-sp-muted outline-none transition;
+  }
+  .sp-input:hover {
+    @apply border-sp-border;
+  }
+  .sp-input:focus {
+    @apply border-white bg-sp-hover;
+  }
+
+  .btn-green {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-sp-green px-8 py-3 text-base font-bold text-black transition;
+  }
+  .btn-green:hover:not(:disabled) {
+    @apply scale-[1.04] bg-sp-green-bright;
+  }
+  .btn-green:disabled {
+    @apply opacity-40;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-sp-muted px-6 py-2.5 text-sm font-bold text-white transition;
+  }
+  .btn-outline:hover:not(:disabled) {
+    @apply scale-[1.04] border-white;
+  }
+  .btn-outline:disabled {
+    @apply opacity-40;
+  }
+  .chip {
+    @apply rounded-full bg-white/[0.07] px-3 py-1.5 text-sm font-semibold text-white transition whitespace-nowrap;
+  }
+  .chip:hover {
+    @apply bg-white/[0.12];
+  }
+  .chip-active {
+    @apply bg-white text-black;
+  }
+  .chip-active:hover {
+    @apply bg-white;
+  }
+}
