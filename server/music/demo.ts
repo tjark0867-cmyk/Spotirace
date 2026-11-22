@@ -1,6 +1,7 @@
 import type {
   AlbumDetail,
   ArtistSummary,
+  PopularArtist,
   ReleaseGroup,
   ReleasePage,
   ReleaseSummary,
@@ -164,6 +165,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class DemoProvider implements MusicProvider {
   readonly name = 'demo';
+  readonly pageCount = 20;
 
   async searchArtists(query: string): Promise<ArtistSummary[]> {
     const q = query.trim().toLowerCase();
@@ -214,8 +216,17 @@ export class DemoProvider implements MusicProvider {
     };
   }
 
-  async popularArtists(): Promise<ArtistSummary[]> {
-    return ['nova', 'kaito', 'kompass', 'pia', 'jaylen', 'sora', 'rico', 'mila'].map(artistSummary);
+  async popularArtists(): Promise<PopularArtist[]> {
+    return ['nova', 'kaito', 'kompass', 'pia', 'jaylen', 'sora', 'rico', 'mila'].map((id) => ({
+      name: ARTISTS[id].name,
+      image: `/demo/artist/${id}.svg`,
+    }));
+  }
+
+  async resolveArtist(name: string): Promise<ArtistSummary> {
+    const hit = (await this.searchArtists(name))[0];
+    if (!hit) throw new ProviderError(404, 'Artist nicht gefunden');
+    return hit;
   }
 
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {

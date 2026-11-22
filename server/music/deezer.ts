@@ -41,12 +41,29 @@ export async function deezerFans(query: string, timeoutMs = 900): Promise<Map<st
   return map;
 }
 
-/** Aktuell meistgehörte Artists laut Deezer-Charts (nur Namen) */
-export async function deezerChartNames(limit = 20, timeoutMs = 3000): Promise<string[]> {
+interface DzArtist {
+  name: string;
+  picture_medium?: string;
+  picture_big?: string;
+}
+
+/** Aktuell meistgehörte Artists laut Deezer-Charts (Name + Bild) */
+export async function deezerChart(limit = 20, timeoutMs = 3000): Promise<Array<{ name: string; image: string | null }>> {
   try {
-    const json = await dz<{ data?: Array<{ name: string }> }>(`/chart/0/artists?limit=${limit}`, timeoutMs);
-    return (json.data ?? []).map((a) => a.name).filter(Boolean);
+    const json = await dz<{ data?: DzArtist[] }>(`/chart/0/artists?limit=${limit}`, timeoutMs);
+    return (json.data ?? []).filter((a) => a.name).map((a) => ({ name: a.name, image: a.picture_big ?? a.picture_medium ?? null }));
   } catch {
     return [];
+  }
+}
+
+/** Bild zu einem Artist-Namen (für Vorschläge) */
+export async function deezerPicture(name: string, timeoutMs = 2500): Promise<string | null> {
+  try {
+    const json = await dz<{ data?: DzArtist[] }>(`/search/artist?q=${encodeURIComponent(name)}&limit=3`, timeoutMs);
+    const hit = (json.data ?? []).find((a) => normName(a.name) === normName(name)) ?? json.data?.[0];
+    return hit?.picture_big ?? hit?.picture_medium ?? null;
+  } catch {
+    return null;
   }
 }

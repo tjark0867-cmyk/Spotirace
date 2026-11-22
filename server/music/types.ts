@@ -1,6 +1,7 @@
 import type {
   AlbumDetail,
   ArtistSummary,
+  PopularArtist,
   ReleaseGroup,
   ReleasePage,
 } from '../../shared/types';
@@ -19,8 +20,12 @@ export interface MusicProvider {
   getReleases(artistId: string, group: ReleaseGroup, offset: number, count: number): Promise<ReleasePage>;
   getAlbum(id: string): Promise<AlbumDetail>;
   randomArtist(excludeIds: string[]): Promise<ArtistSummary>;
-  /** Bekannte Artists als Vorschläge für die Suche */
-  popularArtists(): Promise<ArtistSummary[]>;
+  /** Bekannte Artists als Vorschläge für die Suche (ohne Spotify-Anfragen) */
+  popularArtists(): Promise<PopularArtist[]>;
+  /** Einen Vorschlag (Name) in einen Spotify-Artist verwandeln */
+  resolveArtist(name: string): Promise<ArtistSummary>;
+  /** Wie viele Releases pro Kategorie auf einmal geladen werden (1 Anfrage) */
+  readonly pageCount: number;
 }
 
 export class ProviderError extends Error {

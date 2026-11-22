@@ -1,4 +1,4 @@
-import type { AlbumDetail, ArtistSummary, ReleasePage } from '../../shared/types';
+import type { AlbumDetail, ArtistSummary, PopularArtist, ReleasePage } from '../../shared/types';
 import { ProviderError, type MusicProvider } from './types';
 
 const MESSAGE =
@@ -8,6 +8,7 @@ const MESSAGE =
 /** Wird benutzt, wenn keine Spotify-Keys gesetzt sind – keine erfundenen Daten, nur eine klare Meldung. */
 export class MissingKeysProvider implements MusicProvider {
   readonly name = 'missing';
+  readonly pageCount = 20;
   private fail(): never {
     throw new ProviderError(503, MESSAGE);
   }
@@ -26,7 +27,10 @@ export class MissingKeysProvider implements MusicProvider {
   async randomArtist(): Promise<ArtistSummary> {
     return this.fail();
   }
-  async popularArtists(): Promise<ArtistSummary[]> {
+  async popularArtists(): Promise<PopularArtist[]> {
+    return this.fail();
+  }
+  async resolveArtist(): Promise<ArtistSummary> {
     return this.fail();
   }
 }

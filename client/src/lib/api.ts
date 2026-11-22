@@ -3,6 +3,7 @@ import type {
   AppConfig,
   ArtistPage,
   ArtistSummary,
+  PopularArtist,
   ReleaseGroup,
   ReleasePage,
 } from '../../../shared/types';
@@ -47,7 +48,8 @@ export const api = {
   config: () => cached<AppConfig>('/api/config'),
   configFresh: () => fetchJson<AppConfig>('/api/config'),
   search: (q: string) => cached<ArtistSummary[]>(`/api/search?q=${encodeURIComponent(q.trim())}`),
-  popular: () => cached<ArtistSummary[]>('/api/popular'),
+  popular: () => cached<PopularArtist[]>('/api/popular'),
+  resolve: (name: string) => cached<ArtistSummary>(`/api/resolve?name=${encodeURIComponent(name)}`),
   randomArtist: (exclude: string[]) =>
     fetchJson<ArtistSummary>(`/api/random-artist?exclude=${encodeURIComponent(exclude.join(','))}`),
   artistPage: (id: string) => cached<ArtistPage>(`/api/artist/${encodeURIComponent(id)}`),

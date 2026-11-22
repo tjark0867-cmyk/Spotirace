@@ -14,7 +14,6 @@ import { demoSvg } from './music/demo';
 import { ProviderError, type MusicProvider } from './music/types';
 
 const DIST_DIR = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
-export const PAGE_SIZE = 20;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -113,6 +112,12 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
       return sendJson(req, res, 200, await provider.popularArtists(), 600);
     }
 
+    if (parts[1] === 'resolve') {
+      const name = (url.searchParams.get('name') ?? '').trim().slice(0, 100);
+      if (!name) return sendJson(req, res, 400, { error: 'Name fehlt' });
+      return sendJson(req, res, 200, await provider.resolveArtist(name), 3600);
+    }
+
     if (parts[1] === 'random-artist') {
       const exclude = (url.searchParams.get('exclude') ?? '').split(',').filter(Boolean);
       return sendJson(req, res, 200, await provider.randomArtist(exclude));
@@ -124,12 +129,12 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         const group = url.searchParams.get('group') as ReleaseGroup;
         if (!RELEASE_GROUPS.includes(group)) return sendJson(req, res, 400, { error: 'Ungültige Kategorie' });
         const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-        return sendJson(req, res, 200, await provider.getReleases(id, group, offset, PAGE_SIZE), 3600);
+        return sendJson(req, res, 200, await provider.getReleases(id, group, offset, provider.pageCount), 3600);
       }
       const [artist, ...pages] = await Promise.all([
         provider.getArtist(id),
         ...RELEASE_GROUPS.map((group) =>
-          provider.getReleases(id, group, 0, PAGE_SIZE).catch((err: unknown) => {
+          provider.getReleases(id, group, 0, provider.pageCount).catch((err: unknown) => {
             // Eine Kategorie darf fehlschlagen, ohne die ganze Seite zu blockieren
             const message = err instanceof Error ? err.message : String(err);
             console.warn(`[http] Kategorie ${group} für ${id} fehlgeschlagen: ${message}`);

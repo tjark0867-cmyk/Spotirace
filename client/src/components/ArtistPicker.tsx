@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ArtistSummary } from '../../../shared/types';
+import type { ArtistSummary, PopularArtist } from '../../../shared/types';
 import { api } from '../lib/api';
 import { sound } from '../lib/sound';
 import { useGame } from '../lib/useGame';
@@ -39,7 +39,8 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [randomLoading, setRandomLoading] = useState(false);
-  const [popular, setPopular] = useState<ArtistSummary[] | null>(null);
+  const [popular, setPopular] = useState<PopularArtist[] | null>(null);
+  const [resolving, setResolving] = useState<string | null>(null);
 
   const loadPopular = () => {
     if (popular) return;
@@ -66,7 +67,7 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
         .then((r) => !cancelled && setResults(r))
         .catch((e: Error) => !cancelled && toast(e.message, 'error'))
         .finally(() => !cancelled && setLoading(false));
-    }, 300);
+    }, 450);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -180,9 +181,32 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
             <div className="sp-scroll absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-md bg-sp-elevated p-1 shadow-[0_16px_24px_rgba(0,0,0,.5)]">
               <div className="px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-widest text-sp-sub">Beliebte Artists</div>
               {popular
-                .filter((a) => a.id !== excludeId && a.id !== value?.id)
+                .filter((a) => a.name !== value?.name)
                 .map((a) => (
-                  <ResultRow key={a.id} artist={a} onPick={pick} />
+                  <button
+                    key={a.name}
+                    type="button"
+                    disabled={!!resolving}
+                    onClick={async () => {
+                      setResolving(a.name);
+                      try {
+                        pick(await api.resolve(a.name));
+                      } catch (e) {
+                        toast((e as Error).message, 'error');
+                      } finally {
+                        setResolving(null);
+                      }
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-md p-2 text-left transition hover:bg-white/10 ${
+                      resolving === a.name ? 'animate-pulse' : ''
+                    }`}
+                  >
+                    <ArtistImage artist={{ id: a.name, name: a.name, image: a.image }} size={44} />
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold">{a.name}</div>
+                      <div className="truncate text-xs text-sp-sub">{resolving === a.name ? 'Wird geladen …' : 'Künstler:in'}</div>
+                    </div>
+                  </button>
                 ))}
             </div>
           )}

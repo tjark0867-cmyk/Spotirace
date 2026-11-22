@@ -91,7 +91,9 @@ export function Home() {
 
         {cooldown > 0 && !missingKeys && (
           <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">
-            <b>Spotify bremst gerade</b> (zu viele Anfragen). In etwa {Math.ceil(cooldown / 60)} Minute(n) geht es wieder normal.
+            <b>Spotify macht gerade Pause für diese App.</b> Das Kontingent ist aufgebraucht und wird in ca.{' '}
+            {cooldown >= 3600 ? `${Math.floor(cooldown / 3600)} Std. ${Math.round((cooldown % 3600) / 60)} Min.` : `${Math.max(1, Math.round(cooldown / 60))} Min.`}{' '}
+            wieder freigegeben. Danach läuft alles normal.
           </div>
         )}
 

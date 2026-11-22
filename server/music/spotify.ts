@@ -2,6 +2,7 @@ import type {
   AlbumDetail,
   ArtistRef,
   ArtistSummary,
+  PopularArtist,
   ReleaseGroup,
   ReleasePage,
   ReleaseSummary,
@@ -9,7 +10,7 @@ import type {
 } from '../../shared/types';
 import { Limiter, TtlCache } from '../cache';
 import { RANDOM_ARTIST_NAMES } from './randomArtists';
-import { deezerChartNames, deezerFans, normName } from './deezer';
+import { deezerChart, deezerFans, deezerPicture, normName } from './deezer';
 import { ProviderError, type MusicProvider } from './types';
 
 const DEFAULT_API = 'https://api.spotify.com/v1';
@@ -107,8 +108,15 @@ export class SpotifyProvider implements MusicProvider {
   private limiter = new Limiter(4);
   /** Bis wann Spotify uns gerade bremst (Rate-Limit) */
   private cooldownUntil = 0;
-  /** Max. Seitengröße für Listen – wird automatisch verkleinert, falls Spotify 50 ablehnt */
+  /** true = Tageskontingent aufgebraucht (statt kurzer Bremse) */
+  quotaExceeded = false;
+  /** Max. Seitengröße für Listen – wird automatisch verkleinert, falls Spotify 20 ablehnt */
   private pageSize = 20;
+
+  /** Pro Kategorie genau eine Anfrage → spart Spotify-Kontingent */
+  get pageCount(): number {
+    return this.pageSize;
+  }
   // Nur zum Testen überschreibbar
   private api = process.env.SPOTIFY_API_BASE || DEFAULT_API;
   private tokenUrl = process.env.SPOTIFY_TOKEN_URL || DEFAULT_TOKEN_URL;
@@ -184,9 +192,13 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   private rateLimitError(): ProviderError {
+    const sec = this.cooldownSeconds;
+    const wait = sec >= 3600 ? `${Math.floor(sec / 3600)} Std. ${Math.round((sec % 3600) / 60)} Min.` : sec >= 90 ? `${Math.round(sec / 60)} Min.` : `${sec} Sek.`;
     return new ProviderError(
       503,
-      `Spotify bremst gerade (zu viele Anfragen). Bitte in ${this.cooldownSeconds} Sekunden nochmal versuchen.`,
+      this.quotaExceeded
+        ? `Das Spotify-Kontingent ist für heute aufgebraucht. Spotify gibt es in ca. ${wait} wieder frei.`
+        : `Spotify bremst gerade (zu viele Anfragen). Bitte in ${wait} nochmal versuchen.`,
     );
   }
 
@@ -219,8 +231,15 @@ export class SpotifyProvider implements MusicProvider {
     }
     if (res.status === 429) {
       const retryAfter = Number(res.headers.get('retry-after')) || 2;
+      let reason = '';
+      try {
+        reason = JSON.stringify(await res.json());
+      } catch {
+        /* kein JSON */
+      }
+      this.quotaExceeded = /QUOTA_EXCEEDED/i.test(reason) || retryAfter > 3600;
       this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + retryAfter * 1000);
-      console.warn(`[spotify] Rate-Limit erreicht – Spotify sagt: ${retryAfter}s warten`);
+      console.warn(`[spotify] 429 – Spotify sagt: ${retryAfter}s warten ${reason}`);
       if (retryAfter <= 3 && attempt < 3) {
         await sleep(retryAfter * 1000 + Math.random() * 300);
         return this.request<T>(pathOrUrl, attempt + 1);
@@ -325,38 +344,32 @@ export class SpotifyProvider implements MusicProvider {
     });
   }
 
-  /** Vorschläge: aktuelle Deezer-Charts + unsere Liste bekannter Artists, passend bei Spotify gesucht */
-  async popularArtists(): Promise<ArtistSummary[]> {
+  /**
+   * Vorschläge: aktuelle Deezer-Charts + unsere Liste bekannter Artists.
+   * Kostet KEINE Spotify-Anfragen – erst beim Antippen wird der Artist bei Spotify gesucht.
+   */
+  async popularArtists(): Promise<PopularArtist[]> {
     return this.cache.wrap('popular', 12 * HOUR, async () => {
-      const chart = await deezerChartNames(16);
-      const names: string[] = [];
+      const chart = await deezerChart(12);
+      const list: PopularArtist[] = [];
       const seen = new Set<string>();
-      for (const name of [...chart.slice(0, 10), ...RANDOM_ARTIST_NAMES]) {
-        const n = normName(name);
-        if (seen.has(n)) continue;
-        seen.add(n);
-        names.push(name);
-        if (names.length >= 16) break;
+      for (const a of chart.slice(0, 8)) {
+        if (seen.has(normName(a.name))) continue;
+        seen.add(normName(a.name));
+        list.push(a);
       }
-      // Nacheinander in kleinen Gruppen, damit Spotify nicht bremst
-      const results: Array<ArtistSummary | null> = [];
-      for (let i = 0; i < Math.min(names.length, 12); i += 3) {
-        const chunk = await Promise.all(
-          names.slice(i, i + 3).map(async (name) => {
-            try {
-              const hits = await this.rawSearch(name);
-              return hits.find((a) => normName(a.name) === normName(name)) ?? null;
-            } catch {
-              return null;
-            }
-          }),
-        );
-        results.push(...chunk);
-      }
-      const list = results.filter((a): a is ArtistSummary => !!a);
-      if (list.length === 0) throw new ProviderError(502, 'Konnte keine Vorschläge laden');
+      const extra = RANDOM_ARTIST_NAMES.filter((n) => !seen.has(normName(n))).slice(0, 14 - list.length);
+      const pictures = await Promise.all(extra.map((n) => deezerPicture(n)));
+      extra.forEach((name, i) => list.push({ name, image: pictures[i] }));
       return list;
     });
+  }
+
+  async resolveArtist(name: string): Promise<ArtistSummary> {
+    const hits = await this.rawSearch(name);
+    const hit = hits.find((a) => normName(a.name) === normName(name)) ?? hits[0];
+    if (!hit) throw new ProviderError(404, `„${name}“ nicht gefunden`);
+    return hit;
   }
 
   async getArtist(id: string): Promise<ArtistSummary> {

@@ -47,6 +47,12 @@ export interface ReleasePage {
   error?: string;
 }
 
+/** Vorschlag für die Suche – wird erst beim Antippen bei Spotify nachgeschlagen (spart Anfragen) */
+export interface PopularArtist {
+  name: string;
+  image: string | null;
+}
+
 export interface ArtistPage {
   artist: ArtistSummary;
   sections: Record<ReleaseGroup, ReleasePage>;
