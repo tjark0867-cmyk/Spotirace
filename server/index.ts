@@ -5,7 +5,7 @@ import { GameServer } from './game';
 import { createHttpHandler } from './http';
 import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
-import { readSpotifyKeys } from './setup';
+import { readMarket, readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
 import type { MusicProvider } from './music/types';
 
@@ -20,7 +20,7 @@ const PORT = Number(process.env.PORT) || 3001;
 const keys = readSpotifyKeys();
 const { clientId, clientSecret } = keys;
 const setup = keys.status;
-const market = process.env.SPOTIFY_MARKET?.trim() ?? 'DE';
+const market = readMarket();
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 
 let provider: MusicProvider;

@@ -12,8 +12,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: SPOTIFY_MARKET
-        value: DE
       - key: SPOTIFY_CLIENT_ID
         sync: false
       - key: SPOTIFY_CLIENT_SECRET
