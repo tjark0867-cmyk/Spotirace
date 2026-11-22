@@ -36,6 +36,7 @@ function cached<T>(url: string): Promise<T> {
 
 export const api = {
   config: () => cached<AppConfig>('/api/config'),
+  configFresh: () => fetchJson<AppConfig>('/api/config'),
   search: (q: string) => cached<ArtistSummary[]>(`/api/search?q=${encodeURIComponent(q.trim())}`),
   randomArtist: (exclude: string[]) =>
     fetchJson<ArtistSummary>(`/api/random-artist?exclude=${encodeURIComponent(exclude.join(','))}`),

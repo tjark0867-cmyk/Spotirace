@@ -123,9 +123,12 @@ export class SpotifyProvider implements MusicProvider {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
+        const invalid = /invalid_client/i.test(text) || res.status === 400 || res.status === 401;
         throw new ProviderError(
           502,
-          `Spotify-Login fehlgeschlagen (${res.status}). Stimmen SPOTIFY_CLIENT_ID und SPOTIFY_CLIENT_SECRET in der .env? ${text}`,
+          invalid
+            ? 'Spotify lehnt die Keys ab: Client ID oder Client Secret ist falsch kopiert (oder vertauscht). Bitte beide nochmal mit dem Kopier-Symbol bei Spotify kopieren.'
+            : `Spotify-Login fehlgeschlagen (${res.status}). ${text}`.trim(),
         );
       }
       const json = (await res.json()) as { access_token: string; expires_in: number };
@@ -135,6 +138,17 @@ export class SpotifyProvider implements MusicProvider {
       this.tokenPromise = null;
     });
     return this.tokenPromise;
+  }
+
+  /** Testet den Login. Gibt null zurück, wenn alles passt, sonst eine Fehlermeldung. */
+  async verify(): Promise<string | null> {
+    try {
+      this.token = null;
+      await this.getToken();
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
   }
 
   // ---------- HTTP mit Retry bei 401 / 429 / 5xx ----------

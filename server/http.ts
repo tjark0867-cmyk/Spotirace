@@ -53,11 +53,11 @@ function emptyPage(group: ReleaseGroup, error: string): ReleasePage {
   return { group, items: [], total: 0, offset: 0, next: null, error };
 }
 
-export function createHttpHandler(provider: MusicProvider, config: AppConfig) {
+export function createHttpHandler(provider: MusicProvider, getConfig: () => AppConfig) {
   async function handleApi(url: URL, res: ServerResponse) {
     const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
 
-    if (parts[1] === 'config') return sendJson(res, 200, config);
+    if (parts[1] === 'config') return sendJson(res, 200, getConfig());
 
     if (parts[1] === 'search') {
       const q = (url.searchParams.get('q') ?? '').slice(0, 100);

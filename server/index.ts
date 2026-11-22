@@ -5,6 +5,7 @@ import { GameServer } from './game';
 import { createHttpHandler } from './http';
 import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
+import { readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
 import type { MusicProvider } from './music/types';
 
@@ -16,18 +17,35 @@ try {
 }
 
 const PORT = Number(process.env.PORT) || 3001;
-const clientId = process.env.SPOTIFY_CLIENT_ID?.trim() ?? '';
-const clientSecret = process.env.SPOTIFY_CLIENT_SECRET?.trim() ?? '';
+const keys = readSpotifyKeys();
+const { clientId, clientSecret } = keys;
+const setup = keys.status;
 const market = process.env.SPOTIFY_MARKET?.trim() ?? 'DE';
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 
 let provider: MusicProvider;
+let recheckLogin = () => {};
+for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
 if (forceDemo) {
   provider = new DemoProvider();
   console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
 } else if (clientId && clientSecret) {
-  provider = new SpotifyProvider(clientId, clientSecret, market);
+  const spotify = new SpotifyProvider(clientId, clientSecret, market);
+  provider = spotify;
   console.log(`🎧 Musikdaten: Spotify (Markt: ${market || 'alle'})`);
+  // Login gleich beim Start testen, damit die Startseite sagen kann, ob die Keys stimmen
+  let lastCheck = 0;
+  const check = async () => {
+    lastCheck = Date.now();
+    const error = await spotify.verify();
+    setup.login = error ? 'failed' : 'ok';
+    setup.loginError = error;
+    console.log(error ? `❌ Spotify-Login fehlgeschlagen: ${error}` : '✅ Spotify-Login klappt');
+  };
+  void check();
+  recheckLogin = () => {
+    if (setup.login !== 'ok' && Date.now() - lastCheck > 30_000) void check();
+  };
 } else {
   provider = new MissingKeysProvider();
   console.warn(
@@ -37,7 +55,15 @@ if (forceDemo) {
   );
 }
 
-const handler = createHttpHandler(provider, { demo: provider.name === 'demo', missingKeys: provider.name === 'missing' });
+const handler = createHttpHandler(provider, () => {
+  recheckLogin();
+  const isDemo = provider.name === 'demo';
+  return {
+    demo: isDemo,
+    missingKeys: !isDemo && (provider.name === 'missing' || setup.login === 'failed'),
+    setup: isDemo ? null : setup,
+  };
+});
 const server = createServer((req, res) => void handler(req, res));
 
 // WebSocket für Lobby und Spiel

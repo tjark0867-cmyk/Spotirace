@@ -157,8 +157,18 @@ export type ServerMessage =
   | { t: 'moveFailed'; message: string }
   | { t: 'pong' };
 
+export interface SetupStatus {
+  idFound: boolean;
+  secretFound: boolean;
+  /** Ergebnis des Test-Logins bei Spotify */
+  login: 'ok' | 'failed' | 'unknown';
+  loginError: string | null;
+  hints: string[];
+}
+
 export interface AppConfig {
   demo: boolean;
-  /** true, wenn keine Spotify-Keys gesetzt sind */
+  /** true, wenn Spotify (noch) nicht benutzbar ist: Keys fehlen oder Login klappt nicht */
   missingKeys: boolean;
+  setup: SetupStatus | null;
 }

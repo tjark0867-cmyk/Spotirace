@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowRightIcon, FlagIcon, MouseClickIcon, UsersIcon } from '../components/Icons';
 import { Logo } from '../components/Logo';
+import type { SetupStatus } from '../../../shared/types';
+import { SetupBox } from '../components/SetupBox';
 import { api } from '../lib/api';
 import { useGame } from '../lib/useGame';
 
@@ -19,6 +21,7 @@ export function Home() {
   const [code, setCode] = useState(invited);
   const [demo, setDemo] = useState(false);
   const [missingKeys, setMissingKeys] = useState(false);
+  const [setup, setSetup] = useState<SetupStatus | null>(null);
 
   useEffect(() => {
     api
@@ -26,9 +29,25 @@ export function Home() {
       .then((c) => {
         setDemo(c.demo);
         setMissingKeys(c.missingKeys);
+        setSetup(c.setup);
       })
       .catch(() => {});
   }, []);
+
+  // Solange Spotify nicht verbunden ist, regelmäßig nachsehen – nach dem Deploy verschwindet der Hinweis von selbst
+  useEffect(() => {
+    if (!missingKeys) return;
+    const id = setInterval(() => {
+      api
+        .configFresh()
+        .then((c) => {
+          setMissingKeys(c.missingKeys);
+          setSetup(c.setup);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [missingKeys]);
 
   const saveName = () => {
     try {
@@ -61,12 +80,7 @@ export function Home() {
           Vom Start-Artist zum Ziel – nur über gemeinsame Songs.
         </p>
 
-        {missingKeys && (
-          <div className="mt-6 w-full rounded-lg border border-sp-red/40 bg-sp-red/10 px-4 py-3 text-sm text-[#ffc2c8]">
-            <b>Spotify ist noch nicht verbunden.</b> Trag <code>SPOTIFY_CLIENT_ID</code> und <code>SPOTIFY_CLIENT_SECRET</code> bei Render unter{' '}
-            <b>Environment</b> ein (lokal in der <code>.env</code>) und starte den Server neu.
-          </div>
-        )}
+        {missingKeys && setup && <SetupBox setup={setup} />}
 
         {demo && (
           <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">
