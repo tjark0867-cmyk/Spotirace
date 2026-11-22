@@ -159,4 +159,6 @@ export type ServerMessage =
 
 export interface AppConfig {
   demo: boolean;
+  /** true, wenn keine Spotify-Keys gesetzt sind */
+  missingKeys: boolean;
 }

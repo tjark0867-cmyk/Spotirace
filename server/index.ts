@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { GameServer } from './game';
 import { createHttpHandler } from './http';
 import { DemoProvider } from './music/demo';
+import { MissingKeysProvider } from './music/missing';
 import { SpotifyProvider } from './music/spotify';
 import type { MusicProvider } from './music/types';
 
@@ -21,19 +22,22 @@ const market = process.env.SPOTIFY_MARKET?.trim() ?? 'DE';
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 
 let provider: MusicProvider;
-if (!forceDemo && clientId && clientSecret) {
+if (forceDemo) {
+  provider = new DemoProvider();
+  console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
+} else if (clientId && clientSecret) {
   provider = new SpotifyProvider(clientId, clientSecret, market);
   console.log(`🎧 Musikdaten: Spotify (Markt: ${market || 'alle'})`);
 } else {
-  provider = new DemoProvider();
-  console.log(
-    forceDemo
-      ? '🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.'
-      : '🧪 Keine Spotify-Keys gefunden → Demo-Modus mit erfundenen Artists.\n   Trag SPOTIFY_CLIENT_ID und SPOTIFY_CLIENT_SECRET in die .env ein, um mit echten Daten zu spielen.',
+  provider = new MissingKeysProvider();
+  console.warn(
+    '⚠️  Keine Spotify-Keys gefunden! Trag SPOTIFY_CLIENT_ID und SPOTIFY_CLIENT_SECRET ein\n' +
+      '   (bei Render unter "Environment", lokal in der .env) und starte den Server neu.\n' +
+      '   Nur zum Ausprobieren ohne Spotify: DEMO=1 setzen.',
   );
 }
 
-const handler = createHttpHandler(provider, { demo: provider.name === 'demo' });
+const handler = createHttpHandler(provider, { demo: provider.name === 'demo', missingKeys: provider.name === 'missing' });
 const server = createServer((req, res) => void handler(req, res));
 
 // WebSocket für Lobby und Spiel

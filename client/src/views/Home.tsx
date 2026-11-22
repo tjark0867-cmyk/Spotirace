@@ -18,9 +18,16 @@ export function Home() {
   });
   const [code, setCode] = useState(invited);
   const [demo, setDemo] = useState(false);
+  const [missingKeys, setMissingKeys] = useState(false);
 
   useEffect(() => {
-    api.config().then((c) => setDemo(c.demo)).catch(() => {});
+    api
+      .config()
+      .then((c) => {
+        setDemo(c.demo);
+        setMissingKeys(c.missingKeys);
+      })
+      .catch(() => {});
   }, []);
 
   const saveName = () => {
@@ -54,10 +61,16 @@ export function Home() {
           Vom Start-Artist zum Ziel – nur über gemeinsame Songs.
         </p>
 
+        {missingKeys && (
+          <div className="mt-6 w-full rounded-lg border border-sp-red/40 bg-sp-red/10 px-4 py-3 text-sm text-[#ffc2c8]">
+            <b>Spotify ist noch nicht verbunden.</b> Trag <code>SPOTIFY_CLIENT_ID</code> und <code>SPOTIFY_CLIENT_SECRET</code> bei Render unter{' '}
+            <b>Environment</b> ein (lokal in der <code>.env</code>) und starte den Server neu.
+          </div>
+        )}
+
         {demo && (
           <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">
-            <b>Demo-Modus:</b> Es werden erfundene Artists verwendet. Trag deine Spotify-Keys in die <code>.env</code> ein, um mit echten Daten zu
-            spielen.
+            <b>Demo-Modus (DEMO=1):</b> Es werden erfundene Artists verwendet. Entferne DEMO=1, um mit echten Spotify-Daten zu spielen.
           </div>
         )}
 
@@ -82,7 +95,7 @@ export function Home() {
           />
 
           {!invited && (
-            <button type="button" className="btn-green mt-6 w-full" disabled={!nameOk || !online} onClick={create}>
+            <button type="button" className="btn-green mt-6 w-full" disabled={!nameOk || !online || missingKeys} onClick={create}>
               Lobby erstellen
             </button>
           )}
@@ -109,7 +122,7 @@ export function Home() {
             <button
               type="button"
               className={invited ? 'btn-green shrink-0 px-6' : 'btn-outline shrink-0'}
-              disabled={!nameOk || code.trim().length < 4 || !online}
+              disabled={!nameOk || code.trim().length < 4 || !online || missingKeys}
               onClick={join}
             >
               Beitreten <ArrowRightIcon size={16} />

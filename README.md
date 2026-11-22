@@ -33,7 +33,7 @@ Gut zu wissen: Nach 15 Minuten ohne Besucher schläft der kostenlose Server ein.
 ## 1. Voraussetzungen
 
 - **Node.js 22** (LTS) – Download: <https://nodejs.org>
-- Für echte Daten: eine **Spotify-Developer-App** (der Besitzer braucht Spotify Premium). Ohne Keys startet das Spiel im **Demo-Modus** mit erfundenen Artists.
+- Eine **Spotify-Developer-App** (der Besitzer braucht Spotify Premium). Ohne Keys zeigt das Spiel einen Hinweis statt Musikdaten. Nur zum Ausprobieren gibt es mit `DEMO=1` erfundene Demo-Artists.
 
 ## 2. Installieren und starten
 
@@ -101,7 +101,7 @@ Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spi
 |---|---|
 | „Spotify-Login fehlgeschlagen“ | Client ID / Secret in der `.env` prüfen, danach Server neu starten |
 | „Spotify-Fehler 403“ | Ist das Premium-Abo des App-Besitzers aktiv? |
-| Spiel zeigt „Demo-Modus“ | `.env` fehlt oder Keys sind leer |
+| „Spotify ist noch nicht verbunden“ | Keys fehlen: bei Render unter **Environment** bzw. in der `.env` eintragen, dann neu starten |
 | `EADDRINUSE` | Port belegt → in der `.env` z. B. `PORT=3002` setzen |
 | Freunde kommen nicht rein | Gleiches WLAN? Port 5173 (Entwicklung) bzw. 3001 (nach `npm run build`) benutzen |
 
@@ -114,7 +114,8 @@ server/
   http.ts           API für Suche, Artist-Seiten, Alben
   cache.ts          Zwischenspeicher + Begrenzung paralleler Anfragen
   music/spotify.ts  Spotify Web API (Client-Credentials-Flow)
-  music/demo.ts     Erfundene Musikwelt für den Demo-Modus
+  music/demo.ts     Erfundene Musikwelt, nur mit DEMO=1
+  music/missing.ts  Klare Fehlermeldung, wenn Keys fehlen
 shared/types.ts     Gemeinsame Typen für Server und Browser
 client/src/         React-Oberfläche (Tailwind CSS)
 ```
