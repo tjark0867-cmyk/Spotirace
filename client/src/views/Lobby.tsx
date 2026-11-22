@@ -1,6 +1,8 @@
 import type { GameSettings, RoomState, TimeLimit } from '../../../shared/types';
 import { AppShell } from '../components/AppShell';
 import { ArtistPicker } from '../components/ArtistPicker';
+import { UsageCard } from '../components/UsageCard';
+import { useConfig } from '../lib/useConfig';
 import { ArrowRightIcon, CheckIcon, CopyIcon, PlayIcon } from '../components/Icons';
 import { useEffect } from 'react';
 import { api } from '../lib/api';
@@ -73,6 +75,7 @@ function SettingsCard({ settings, editable }: { settings: GameSettings; editable
 
 export function Lobby({ state }: { state: RoomState }) {
   const { send, me, toast } = useGame();
+  const config = useConfig(20_000);
 
   // Start-Artist schon in der Lobby laden → beim Countdown ist alles da
   const startId = state.start?.id;
@@ -137,6 +140,10 @@ export function Lobby({ state }: { state: RoomState }) {
         </div>
 
         <SettingsCard settings={state.settings} editable={isHost} />
+
+        {config?.usage && (
+          <UsageCard usage={config.usage} players={state.players.filter((p) => p.connected).length} cooldownSeconds={config.cooldownSeconds} />
+        )}
 
         <div className="sticky bottom-0 -mx-5 flex flex-col items-center gap-3 bg-gradient-to-t from-sp-base via-sp-base to-transparent px-5 pb-4 pt-8 sm:-mx-8">
           {isHost ? (

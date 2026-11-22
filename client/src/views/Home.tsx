@@ -25,6 +25,7 @@ export function Home() {
   const [missingKeys, setMissingKeys] = useState(false);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [usedToday, setUsedToday] = useState<number | null>(null);
 
   useEffect(() => {
     api
@@ -34,6 +35,7 @@ export function Home() {
         setMissingKeys(c.missingKeys);
         setSetup(c.setup);
         setCooldown(c.cooldownSeconds ?? 0);
+        setUsedToday(c.usage?.today ?? null);
       })
       .catch(() => {});
   }, []);
@@ -172,6 +174,10 @@ export function Home() {
           )}
           {!online && <p className="mt-4 text-center text-sm text-sp-muted">Verbinde mit dem Server …</p>}
         </div>
+
+        {usedToday !== null && (
+          <p className="mt-4 text-center text-xs text-sp-muted">Spotify heute: {usedToday.toLocaleString('de-DE')} Anfragen verbraucht</p>
+        )}
 
         <div className="mt-10 grid w-full gap-3 sm:grid-cols-3">
           {[

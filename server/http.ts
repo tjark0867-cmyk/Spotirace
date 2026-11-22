@@ -4,6 +4,7 @@ import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import {
+  INITIAL_GROUPS,
   RELEASE_GROUPS,
   type AppConfig,
   type ArtistPage,
@@ -97,11 +98,11 @@ function emptyPage(group: ReleaseGroup, error: string): ReleasePage {
   return { group, items: [], total: 0, offset: 0, next: null, error };
 }
 
-export function createHttpHandler(provider: MusicProvider, getConfig: () => AppConfig) {
+export function createHttpHandler(provider: MusicProvider, getConfig: () => AppConfig | Promise<AppConfig>) {
   async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse) {
     const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
 
-    if (parts[1] === 'config') return sendJson(req, res, 200, getConfig());
+    if (parts[1] === 'config') return sendJson(req, res, 200, await getConfig());
 
     if (parts[1] === 'search') {
       const q = (url.searchParams.get('q') ?? '').slice(0, 100);
@@ -134,7 +135,10 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
       const [artist, ...pages] = await Promise.all([
         provider.getArtist(id),
         ...RELEASE_GROUPS.map((group) =>
-          provider.getReleases(id, group, 0, provider.pageCount).catch((err: unknown) => {
+          // Singles & Compilations erst laden, wenn jemand sie antippt (spart Spotify-Kontingent)
+          !INITIAL_GROUPS.includes(group)
+            ? Promise.resolve<ReleasePage>({ group, items: [], total: 0, offset: 0, next: 0, lazy: true })
+            : provider.getReleases(id, group, 0, provider.pageCount).catch((err: unknown) => {
             // Eine Kategorie darf fehlschlagen, ohne die ganze Seite zu blockieren
             const message = err instanceof Error ? err.message : String(err);
             console.warn(`[http] Kategorie ${group} für ${id} fehlgeschlagen: ${message}`);

@@ -20,6 +20,8 @@ function useArtistData(artistId: string) {
   const [data, setData] = useState<ArtistPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState<ReleaseGroup | null>(null);
+  /** Nachgeladene Kategorien bleiben sichtbar, auch wenn sie leer sind */
+  const [requested, setRequested] = useState<Set<ReleaseGroup>>(() => new Set());
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
@@ -37,13 +39,18 @@ function useArtistData(artistId: string) {
 
   const loadMore = async (group: ReleaseGroup) => {
     const section = data?.sections[group];
-    if (!section || section.next === null) return;
+    if (!section || section.next === null || loadingMore === group) return;
     setLoadingMore(group);
     try {
-      const page = await api.releases(artistId, group, section.next);
+      // Noch nicht geladene Kategorie (Singles/Compilations) → erste Seite holen
+      const page = await api.releases(artistId, group, section.lazy ? 0 : section.next);
       setData((d) => {
         if (!d || d.artist.id !== artistId) return d;
         const prev = d.sections[group];
+        if (prev.lazy) {
+          setRequested((r) => new Set(r).add(group));
+          return { ...d, sections: { ...d.sections, [group]: { ...page, lazy: false } } };
+        }
         const seen = new Set(prev.items.map((i) => i.id));
         return {
           ...d,
@@ -65,7 +72,7 @@ function useArtistData(artistId: string) {
     setNonce((n) => n + 1);
   };
 
-  return { data, error, loadingMore, loadMore, reload };
+  return { data, error, loadingMore, loadMore, reload, requested };
 }
 
 function ReleaseCard({ release, group, onOpen }: { release: ReleaseSummary; group: ReleaseGroup; onOpen: () => void }) {
@@ -119,7 +126,7 @@ export function ArtistView({
   onOpenAlbum: (release: ReleaseSummary, group: ReleaseGroup) => void;
   demo: boolean;
 }) {
-  const { data, error, loadingMore, loadMore, reload } = useArtistData(artistId);
+  const { data, error, loadingMore, loadMore, reload, requested } = useArtistData(artistId);
   const [filter, setFilter] = useState<Filter>('all');
   const [hideDupes, setHideDupes] = useState(true);
   const color = useDominantColor(data?.artist.image, artistId);
@@ -146,8 +153,11 @@ export function ArtistView({
   }
 
   const artist = data?.artist;
-  const visible = sections.filter((s) => (filter === 'all' ? s.section.items.length > 0 || s.section.error : s.group === filter));
-  const totalReleases = sections.reduce((n, s) => n + s.section.total, 0);
+  const visible = sections.filter((s) =>
+    filter === 'all'
+      ? s.section.lazy || s.section.items.length > 0 || s.section.error || requested.has(s.group)
+      : s.group === filter,
+  );
 
   return (
     <div>
@@ -173,7 +183,6 @@ export function ArtistView({
               <div className="skeleton mt-3 h-16 w-72 max-w-full rounded" />
             )}
             {artist && artist.genres.length > 0 && <div className="mt-3 text-sm text-white/80">{artist.genres.slice(0, 4).join(' · ')}</div>}
-            {data && <div className="mt-1 text-sm text-white/70">{plural(totalReleases, 'Release', 'Releases')} in der Diskografie</div>}
           </div>
         </div>
       </header>
@@ -188,9 +197,18 @@ export function ArtistView({
         <h2 className="px-2 pb-3 pt-5 text-2xl font-bold sm:px-3">Diskografie</h2>
         <div className="no-scrollbar -mt-1 flex items-center gap-2 overflow-x-auto px-2 pb-4 sm:px-3">
           {(['all', ...RELEASE_GROUPS] as Filter[]).map((f) => {
-            const count = f === 'all' ? null : data?.sections[f].total;
+            const sec = f === 'all' ? null : data?.sections[f];
+            const count = sec && !sec.lazy ? sec.total : null;
             return (
-              <button key={f} type="button" className={`chip ${filter === f ? 'chip-active' : ''}`} onClick={() => setFilter(f)}>
+              <button
+                key={f}
+                type="button"
+                className={`chip ${filter === f ? 'chip-active' : ''}`}
+                onClick={() => {
+                  setFilter(f);
+                  if (sec?.lazy) void loadMore(f as ReleaseGroup);
+                }}
+              >
                 {f === 'all' ? 'Alle' : GROUP_LABELS[f]}
                 {count != null && count > 0 && <span className="ml-1.5 opacity-60">{count}</span>}
               </button>
@@ -209,21 +227,30 @@ export function ArtistView({
             <section key={group} className="mb-6">
               <div className="mb-1 flex items-baseline justify-between px-2 sm:px-3">
                 <h3 className="text-xl font-bold">{GROUP_LABELS[group]}</h3>
-                <span className="text-sm text-sp-sub">
-                  {section.items.length < section.total ? `${section.items.length} von ${section.total}` : plural(section.total, 'Release', 'Releases')}
-                </span>
+                {!section.lazy && (
+                  <span className="text-sm text-sp-sub">
+                    {section.items.length < section.total ? `${section.items.length} von ${section.total}` : plural(section.total, 'Release', 'Releases')}
+                  </span>
+                )}
               </div>
+              {section.lazy && (
+                <div className="px-2 pb-2 pt-1 sm:px-3">
+                  <button type="button" className="btn-outline" disabled={loadingMore === group} onClick={() => loadMore(group)}>
+                    {loadingMore === group ? 'Lädt …' : `${GROUP_LABELS[group]} anzeigen`}
+                  </button>
+                </div>
+              )}
               {group === 'appears_on' && items.length > 0 && (
                 <p className="mb-1 px-2 text-sm text-sp-sub sm:px-3">Hier sind nur die Songs auswählbar, auf denen {data.artist.name} mitwirkt.</p>
               )}
               {section.error && <p className="px-2 py-3 text-sm text-sp-red sm:px-3">Konnte nicht geladen werden: {section.error}</p>}
-              {!section.error && items.length === 0 && <p className="px-2 py-3 text-sm text-sp-muted sm:px-3">Nichts gefunden.</p>}
+              {!section.error && !section.lazy && items.length === 0 && <p className="px-2 py-3 text-sm text-sp-muted sm:px-3">Nichts gefunden.</p>}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-1 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-2">
                 {items.map((r) => (
                   <ReleaseCard key={r.id} release={r} group={group} onOpen={() => onOpenAlbum(r, group)} />
                 ))}
               </div>
-              {section.next !== null && (
+              {section.next !== null && !section.lazy && (
                 <div className="mt-2 px-2 sm:px-3">
                   <button type="button" className="btn-outline" disabled={loadingMore === group} onClick={() => loadMore(group)}>
                     {loadingMore === group ? 'Lädt …' : `Mehr laden (${section.total - section.items.length} weitere)`}

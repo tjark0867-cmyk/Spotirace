@@ -1,13 +1,30 @@
+import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } from 'node:zlib';
+
+/** Zweite Speicherstufe außerhalb des Servers (z. B. Render Key Value) */
+export interface RemoteStore {
+  get(key: string): Promise<Buffer | null>;
+  set(key: string, value: Buffer, ttlSeconds: number): Promise<void>;
+}
+
+/** Version der gespeicherten Daten – bei Formatänderungen hochzählen */
+const REMOTE_PREFIX = 'sr:v1:';
+
 /**
  * Kleiner In-Memory-Cache mit Ablaufzeit, LRU-Verdrängung und
  * Zusammenfassung gleichzeitiger Anfragen (wenn alle Spieler gleichzeitig
  * dieselbe Artist-Seite öffnen, geht nur EINE Anfrage an Spotify raus).
+ * Optional mit zweiter Stufe (Key Value), die einen Neustart überlebt.
  */
 export class TtlCache {
   private store = new Map<string, { value: unknown; expires: number }>();
   private inflight = new Map<string, Promise<unknown>>();
+  /** Statistik für die Logs */
+  stats = { memoryHits: 0, remoteHits: 0, loads: 0 };
 
-  constructor(private maxEntries = 5000) {}
+  constructor(
+    private maxEntries = 5000,
+    private remote: RemoteStore | null = null,
+  ) {}
 
   get<T>(key: string): T | undefined {
     const hit = this.store.get(key);
@@ -32,12 +49,46 @@ export class TtlCache {
     }
   }
 
-  async wrap<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  /**
+   * Holt einen Wert aus dem Speicher oder lädt ihn.
+   * remoteTtlSeconds > 0: zusätzlich im Key-Value-Speicher ablegen bzw. von dort holen.
+   */
+  async wrap<T>(key: string, ttlMs: number, load: () => Promise<T>, remoteTtlSeconds = 0): Promise<T> {
     const cached = this.get<T>(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      this.stats.memoryHits++;
+      return cached;
+    }
     const running = this.inflight.get(key);
     if (running) return running as Promise<T>;
-    const promise = load()
+    const useRemote = !!this.remote && remoteTtlSeconds > 0;
+    const promise = (async () => {
+      if (useRemote) {
+        try {
+          const buf = await this.remote!.get(REMOTE_PREFIX + key);
+          if (buf) {
+            const value = JSON.parse(brotliDecompressSync(buf).toString('utf8')) as T;
+            this.stats.remoteHits++;
+            return value;
+          }
+        } catch {
+          /* Speicher weg oder kaputt → normal laden */
+        }
+      }
+      const value = await load();
+      this.stats.loads++;
+      if (useRemote) {
+        try {
+          const packed = brotliCompressSync(Buffer.from(JSON.stringify(value)), {
+            params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+          });
+          this.remote!.set(REMOTE_PREFIX + key, packed, remoteTtlSeconds).catch(() => {});
+        } catch {
+          /* egal */
+        }
+      }
+      return value;
+    })()
       .then((value) => {
         this.set(key, value, ttlMs);
         return value;

@@ -22,6 +22,9 @@ export type ReleaseGroup = 'album' | 'single' | 'compilation' | 'appears_on';
 
 export const RELEASE_GROUPS: ReleaseGroup[] = ['album', 'single', 'compilation', 'appears_on'];
 
+/** Diese Kategorien lädt eine Artist-Seite sofort, die anderen erst beim Antippen */
+export const INITIAL_GROUPS: ReleaseGroup[] = ['album', 'appears_on'];
+
 export interface ReleaseSummary {
   id: string;
   name: string;
@@ -45,6 +48,8 @@ export interface ReleasePage {
   next: number | null;
   /** Gesetzt, wenn diese Kategorie nicht geladen werden konnte */
   error?: string;
+  /** true = noch nicht geladen, erst beim Antippen (spart Spotify-Anfragen) */
+  lazy?: boolean;
 }
 
 /** Vorschlag für die Suche – wird erst beim Antippen bei Spotify nachgeschlagen (spart Anfragen) */
@@ -186,4 +191,17 @@ export interface AppConfig {
   setup: SetupStatus | null;
   /** Sekunden, die Spotify gerade noch bremst (Rate-Limit), sonst 0 */
   cooldownSeconds: number;
+  /** Verbrauch des Spotify-Kontingents (null im Demo-Modus) */
+  usage: UsageInfo | null;
+}
+
+export interface UsageInfo {
+  /** Anfragen an Spotify heute (deutsche Zeit) */
+  today: number;
+  /** Bei welchem Stand Spotify zuletzt "aufgebraucht" gemeldet hat */
+  lastLimit: { count: number; at: number } | null;
+  /** Gemessene Anfragen pro Spieler und Runde (gleitender Mittelwert) */
+  perPlayerRound: number | null;
+  /** true = Zähler und Zwischenspeicher überstehen Neustarts (Key Value aktiv) */
+  persistent: boolean;
 }

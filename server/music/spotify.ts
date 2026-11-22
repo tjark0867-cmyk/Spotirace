@@ -8,7 +8,8 @@ import type {
   ReleaseSummary,
   TrackInfo,
 } from '../../shared/types';
-import { Limiter, TtlCache } from '../cache';
+import { Limiter, TtlCache, type RemoteStore } from '../cache';
+import type { UsageCounter } from '../usage';
 import { RANDOM_ARTIST_NAMES } from './randomArtists';
 import { deezerChart, deezerFans, deezerPicture, normName } from './deezer';
 import { ProviderError, type MusicProvider } from './types';
@@ -18,6 +19,8 @@ const DEFAULT_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
+// So lange bleiben Daten im Key-Value-Speicher (Sekunden)
+const KV_DAYS = (d: number) => d * 24 * 3600;
 
 // ---- Spotify-Rohdaten (nur die Felder, die wir brauchen) ----
 interface SpImage { url: string; width: number | null; height: number | null }
@@ -103,7 +106,6 @@ export class SpotifyProvider implements MusicProvider {
   readonly name = 'spotify';
   private token: { value: string; expiresAt: number } | null = null;
   private tokenPromise: Promise<string> | null = null;
-  private cache = new TtlCache(8000);
   // Wenige gleichzeitige Anfragen → Spotify drosselt uns nicht (Development Mode hat strenge Limits)
   private limiter = new Limiter(4);
   /** Bis wann Spotify uns gerade bremst (Rate-Limit) */
@@ -121,11 +123,31 @@ export class SpotifyProvider implements MusicProvider {
   private api = process.env.SPOTIFY_API_BASE || DEFAULT_API;
   private tokenUrl = process.env.SPOTIFY_TOKEN_URL || DEFAULT_TOKEN_URL;
 
+  private cache: TtlCache;
+  private usage: UsageCounter | null;
+
   constructor(
     private clientId: string,
     private clientSecret: string,
     private market: string,
-  ) {}
+    opts: { remote?: RemoteStore | null; usage?: UsageCounter | null } = {},
+  ) {
+    this.cache = new TtlCache(8000, opts.remote ?? null);
+    this.usage = opts.usage ?? null;
+    // Eine noch laufende Spotify-Sperre vom letzten Serverstart übernehmen
+    this.usage?.loadCooldown().then((until) => {
+      if (until > Date.now()) {
+        this.cooldownUntil = Math.max(this.cooldownUntil, until);
+        this.quotaExceeded = until - Date.now() > 3600_000;
+        console.warn(`[spotify] Spotify-Sperre läuft noch ${Math.round((until - Date.now()) / 60000)} Min.`);
+      }
+    });
+  }
+
+  /** Für die Logs: Treffer im Speicher vs. echte Spotify-Anfragen */
+  get cacheStats() {
+    return this.cache.stats;
+  }
 
   // ---------- Auth (Client-Credentials-Flow) ----------
 
@@ -213,9 +235,10 @@ export class SpotifyProvider implements MusicProvider {
     const token = await this.getToken();
     let res: Response;
     try {
-      res = await this.limiter.run(() =>
-        fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) }),
-      );
+      res = await this.limiter.run(() => {
+        this.usage?.count();
+        return fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) });
+      });
     } catch (err) {
       // Netzwerk-Schluckauf (Verbindung abgebrochen, Timeout) → kurz warten und nochmal
       if (attempt < 2) {
@@ -239,6 +262,8 @@ export class SpotifyProvider implements MusicProvider {
       }
       this.quotaExceeded = /QUOTA_EXCEEDED/i.test(reason) || retryAfter > 3600;
       this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + retryAfter * 1000);
+      if (this.quotaExceeded) this.usage?.limitHit();
+      if (retryAfter > 60) void this.usage?.saveCooldown(this.cooldownUntil);
       console.warn(`[spotify] 429 – Spotify sagt: ${retryAfter}s warten ${reason}`);
       if (retryAfter <= 3 && attempt < 3) {
         await sleep(retryAfter * 1000 + Math.random() * 300);
@@ -312,7 +337,7 @@ export class SpotifyProvider implements MusicProvider {
         `/search?q=${encodeURIComponent(q)}&type=artist&limit=10`,
       );
       return json.artists.items.map(toArtist);
-    });
+    }, KV_DAYS(2));
   }
 
   /**
@@ -341,7 +366,7 @@ export class SpotifyProvider implements MusicProvider {
         .map((a, i) => ({ a, s: score(a, i) }))
         .sort((x, y) => y.s - x.s)
         .map((x) => x.a);
-    });
+    }, KV_DAYS(1));
   }
 
   /**
@@ -373,11 +398,16 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   async getArtist(id: string): Promise<ArtistSummary> {
-    return this.cache.wrap(`artist:${id}`, DAY, async () => toArtist(await this.request<SpArtist>(`/artists/${encodeURIComponent(id)}`)));
+    return this.cache.wrap(
+      `artist:${id}`,
+      DAY,
+      async () => toArtist(await this.request<SpArtist>(`/artists/${encodeURIComponent(id)}`)),
+      KV_DAYS(3),
+    );
   }
 
   async getReleases(artistId: string, group: ReleaseGroup, offset: number, count: number): Promise<ReleasePage> {
-    const key = `releases:${artistId}:${group}:${offset}:${count}`;
+    const key = `releases:${artistId}:${group}:${offset}`;
     return this.cache.wrap(key, DAY, async () => {
       // Pro Kategorie eine eigene Anfrage, weil "album_group" im Development Mode fehlt
       const market = this.market ? `&market=${encodeURIComponent(this.market)}` : '';
@@ -397,7 +427,7 @@ export class SpotifyProvider implements MusicProvider {
         offset,
         next: covered < total ? covered : null,
       };
-    });
+    }, KV_DAYS(3));
   }
 
   async getAlbum(id: string): Promise<AlbumDetail> {
@@ -424,7 +454,7 @@ export class SpotifyProvider implements MusicProvider {
         tracks: tracks.filter((t) => t && t.id).map(toTrack),
         url: album.external_urls?.spotify ?? `https://open.spotify.com/album/${album.id}`,
       };
-    });
+    }, KV_DAYS(14));
   }
 
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {

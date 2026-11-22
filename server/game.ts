@@ -13,6 +13,7 @@ import type {
   TimeLimit,
 } from '../shared/types';
 import type { MusicProvider } from './music/types';
+import type { UsageCounter } from './usage';
 
 const COUNTDOWN_MS = 3500;
 const LOBBY_DISCONNECT_GRACE_MS = 45_000;
@@ -60,6 +61,8 @@ interface Room {
   timers: NodeJS.Timeout[];
   hostTimer: NodeJS.Timeout | null;
   emptySince: number | null;
+  /** Zählerstand der Spotify-Anfragen beim Rundenstart */
+  usageAtStart: number | null;
 }
 
 class GameError extends Error {}
@@ -96,6 +99,8 @@ export class GameServer {
     private provider: MusicProvider,
     /** Lädt eine Artist-Seite schon mal in den Cache, damit sie gleich sofort da ist */
     private warm: (artistId: string) => void = () => {},
+    /** Misst, wie viele Spotify-Anfragen eine Runde kostet */
+    private usage: UsageCounter | null = null,
   ) {
     setInterval(() => this.sweep(), 60_000).unref();
   }
@@ -300,6 +305,7 @@ export class GameServer {
       timers: [],
       hostTimer: null,
       emptySince: null,
+      usageAtStart: null,
     };
     this.rooms.set(code, room);
     this.sessionRoom.set(sessionId, code);
@@ -406,6 +412,7 @@ export class GameServer {
     room.startAt = now + COUNTDOWN_MS;
     room.endsAt = room.settings.timeLimitMin > 0 ? room.startAt + room.settings.timeLimitMin * 60_000 : null;
     room.endedAt = null;
+    room.usageAtStart = this.usage ? this.usage.today : null;
 
     for (const p of room.players) {
       p.clicks = 0;
@@ -520,7 +527,15 @@ export class GameServer {
     room.phase = 'results';
     room.endedAt = Date.now();
     for (const p of room.players) if (p.status === 'playing') p.status = 'timeout';
-    console.log(`[game] Lobby ${room.code}: Runde ${room.round} beendet`);
+    if (this.usage && room.usageAtStart !== null) {
+      const used = this.usage.today - room.usageAtStart;
+      const players = room.players.filter((p) => p.status !== 'idle').length;
+      // Tageswechsel mitten in der Runde → Messung verwerfen
+      if (used >= 0) this.usage.recordRound(used, players);
+      console.log(`[game] Lobby ${room.code}: Runde ${room.round} beendet – ${used} Spotify-Anfragen für ${players} Spieler`);
+    } else {
+      console.log(`[game] Lobby ${room.code}: Runde ${room.round} beendet`);
+    }
     this.broadcast(room);
   }
 

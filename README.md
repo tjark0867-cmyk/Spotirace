@@ -12,7 +12,9 @@ Alle starten beim selben Artist. Ihr klickt euch **nur über gemeinsame Songs** 
 - Der Server prüft jeden Klick – Schummeln geht nicht
 - Soundeffekte (Countdown, Sprünge, Sieg …) – direkt im Browser erzeugt, mit Ton-Schalter oben
 - Bekannte Artists stehen in der Suche oben, beim Antippen der Suche gibt es Vorschläge
-- Schnell: kleine Cover im Raster, komprimierte Daten, Alben und nächste Artists werden schon vorgeladen
+- Schnell und sparsam: kleine Cover im Raster, komprimierte Daten, Singles & Compilations erst auf Antippen
+- Dauerhafter Zwischenspeicher (Render Key Value): Geladene Artists und Alben überstehen Einschlafen und Neustarts
+- Kontingent-Anzeige in der Lobby: Spotify-Anfragen heute, gemessene Kosten pro Runde und wie viele Runden noch gehen
 - Läuft auch am Handy
 
 ---
@@ -24,7 +26,7 @@ Das Spiel läuft kostenlos bei [Render](https://render.com). Die Datei `render.y
 1. Auf <https://render.com> mit **„Sign in with GitHub“** anmelden.
 2. Im Dashboard **New → Blueprint** wählen und dieses Repo auswählen (falls es nicht auftaucht: Render den Zugriff auf das Repo erlauben).
 3. Render fragt nach `SPOTIFY_CLIENT_ID` und `SPOTIFY_CLIENT_SECRET` → aus dem Spotify-Dashboard kopieren und einfügen.
-4. **Deploy Blueprint** tippen und 2–3 Minuten warten.
+4. **Deploy Blueprint** tippen und 2–3 Minuten warten. Render legt dabei auch den kostenlosen Zwischenspeicher `spotirace-cache` an (nur einer pro Workspace erlaubt).
 5. Den Service öffnen und oben auf den Link tippen (z. B. `https://spotirace-xxxx.onrender.com`). Diesen Link schickst du deinen Freunden.
 
 Gut zu wissen: Nach 15 Minuten ohne Besucher schläft der kostenlose Server ein. Der erste Aufruf danach dauert etwa eine Minute, dann läuft alles normal. Wer das nicht will, kann bei einem kostenlosen Dienst wie cron-job.org alle 10 Minuten `https://DEIN-LINK.onrender.com/api/config` aufrufen lassen.
@@ -97,6 +99,8 @@ Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spi
 - Es gibt keine Popularitätswerte mehr. Für die Reihenfolge in der Suche und die Vorschläge fragt der Server deshalb zusätzlich die öffentliche Deezer-API nach Fanzahlen und Charts (ohne Key). Fällt Deezer aus, greift eine Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
 - Jede Kategorie wird einzeln geladen, große Diskografien seitenweise („Mehr laden“). Alle Antworten werden 24 Stunden zwischengespeichert, damit ihr nicht ins Rate-Limit lauft.
 - Falls Spotify für einen Artist bei „Erscheint auf“ nichts liefert, steht dort ein Hinweis – der Rest der Seite funktioniert trotzdem.
+- **Tageskontingent:** Spotify zählt die Anfragen pro Entwickler-Account und sperrt bei Überschreitung bis zu ~24 Stunden. Deshalb lädt das Spiel sparsam: pro Artist-Seite nur Alben und „Erscheint auf“, alles Geladene landet im Zwischenspeicher. Die Lobby zeigt, wie viel heute schon verbraucht ist.
+- Der kostenlose Key-Value-Speicher hält seine Daten nur im Arbeitsspeicher. Startet Render ihn neu, ist der Zwischenspeicher leer – das Spiel lädt die Daten dann einfach neu.
 
 ## 6. Probleme?
 
@@ -115,7 +119,9 @@ server/
   index.ts          Startpunkt (HTTP + WebSocket)
   game.ts           Lobbys, Countdown, Zugprüfung, Zeitlimit, Ergebnis
   http.ts           API für Suche, Artist-Seiten, Alben
-  cache.ts          Zwischenspeicher + Begrenzung paralleler Anfragen
+  cache.ts          Zwischenspeicher (Arbeitsspeicher + Key Value) + Begrenzung paralleler Anfragen
+  kv.ts             Mini-Redis-Client ohne Zusatzpaket
+  usage.ts          Zähler für das Spotify-Kontingent
   music/spotify.ts  Spotify Web API (Client-Credentials-Flow)
   music/demo.ts     Erfundene Musikwelt, nur mit DEMO=1
   music/missing.ts  Klare Fehlermeldung, wenn Keys fehlen

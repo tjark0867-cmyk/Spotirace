@@ -16,3 +16,16 @@ services:
         sync: false
       - key: SPOTIFY_CLIENT_SECRET
         sync: false
+      # Zwischenspeicher: geladene Artists/Alben überstehen Einschlafen und Neustarts
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: spotirace-cache
+          property: connectionString
+
+  # Kostenloser Key-Value-Speicher (Redis-kompatibel), nur intern erreichbar
+  - type: keyvalue
+    name: spotirace-cache
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru

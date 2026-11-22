@@ -2,13 +2,15 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { GameServer } from './game';
-import { RELEASE_GROUPS } from '../shared/types';
+import { INITIAL_GROUPS } from '../shared/types';
 import { createHttpHandler } from './http';
 import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
 import { readMarket, readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
 import type { MusicProvider } from './music/types';
+import { KvClient } from './kv';
+import { UsageCounter } from './usage';
 
 // .env laden (Node ≥ 20.12 kann das ohne Zusatzpaket)
 try {
@@ -24,6 +26,18 @@ const setup = keys.status;
 const market = readMarket();
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 
+// Dauerhafter Zwischenspeicher (Render Key Value) – optional
+const kvUrl = (process.env.REDIS_URL || process.env.KV_URL || '').trim();
+const kv = kvUrl ? new KvClient(kvUrl) : null;
+if (kv) {
+  kv.ping().then((ok) =>
+    console.log(ok ? `💾 Zwischenspeicher verbunden (${kv.label})` : `⚠️  Zwischenspeicher ${kv.label} nicht erreichbar – es geht auch ohne`),
+  );
+} else {
+  console.log('ℹ️  Kein Zwischenspeicher (REDIS_URL) – Daten bleiben nur bis zum nächsten Neustart.');
+}
+const usage = new UsageCounter(kv);
+
 let provider: MusicProvider;
 let recheckLogin = () => {};
 let cooldown = () => 0;
@@ -32,7 +46,7 @@ if (forceDemo) {
   provider = new DemoProvider();
   console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
 } else if (clientId && clientSecret) {
-  const spotify = new SpotifyProvider(clientId, clientSecret, market);
+  const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
   provider = spotify;
   cooldown = () => spotify.cooldownSeconds;
   console.log(`🎧 Musikdaten: Spotify (Markt: ${market || 'alle'})`);
@@ -58,7 +72,7 @@ if (forceDemo) {
   );
 }
 
-const handler = createHttpHandler(provider, () => {
+const handler = createHttpHandler(provider, async () => {
   recheckLogin();
   const isDemo = provider.name === 'demo';
   return {
@@ -66,18 +80,20 @@ const handler = createHttpHandler(provider, () => {
     missingKeys: !isDemo && (provider.name === 'missing' || setup.login === 'failed'),
     setup: isDemo ? null : setup,
     cooldownSeconds: cooldown(),
+    usage: provider.name === 'spotify' ? await usage.info() : null,
   };
 });
 const server = createServer((req, res) => void handler(req, res));
 
-// Artist-Seiten vorab in den Cache laden (Start-Artist in der Lobby, neuer Artist nach jedem Sprung)
+// Artist-Seiten vorab in den Cache laden (Start-Artist in der Lobby, neuer Artist nach jedem Sprung).
+// Nur die Kategorien, die die Seite sofort zeigt – genau das würde der Browser gleich sowieso laden.
 const warm = (artistId: string) => {
   provider.getArtist(artistId).catch(() => {});
-  for (const group of RELEASE_GROUPS) provider.getReleases(artistId, group, 0, provider.pageCount).catch(() => {});
+  for (const group of INITIAL_GROUPS) provider.getReleases(artistId, group, 0, provider.pageCount).catch(() => {});
 };
 
 // WebSocket für Lobby und Spiel
-const game = new GameServer(provider, warm);
+const game = new GameServer(provider, warm, provider.name === 'spotify' ? usage : null);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 const alive = new WeakMap<WebSocket, boolean>();
 
@@ -98,6 +114,12 @@ setInterval(() => {
     ws.ping();
   }
 }, 25_000).unref();
+
+// Render beendet den alten Server bei jedem Deploy mit SIGTERM → Zähler vorher sichern
+process.once('SIGTERM', () => {
+  void usage.flush().finally(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500).unref();
+});
 
 server.listen(PORT, () => {
   console.log(`\n🏁 Spotirace-Server läuft auf http://localhost:${PORT}`);
