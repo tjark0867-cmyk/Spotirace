@@ -127,3 +127,17 @@ export const ExitIcon = ({ size, ...p }: P) => (
     <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />
   </svg>
 );
+
+export const SpeakerIcon = ({ size, ...p }: P) => (
+  <svg {...base(size, p)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+  </svg>
+);
+
+export const MuteIcon = ({ size, ...p }: P) => (
+  <svg {...base(size, p)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor" />
+    <path d="M16 9.5l5 5M21 9.5l-5 5" />
+  </svg>
+);

@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { GameServer } from './game';
-import { createHttpHandler } from './http';
+import { RELEASE_GROUPS } from '../shared/types';
+import { createHttpHandler, PAGE_SIZE } from './http';
 import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
 import { readMarket, readSpotifyKeys } from './setup';
@@ -66,8 +67,14 @@ const handler = createHttpHandler(provider, () => {
 });
 const server = createServer((req, res) => void handler(req, res));
 
+// Artist-Seiten vorab in den Cache laden (Start-Artist in der Lobby, neuer Artist nach jedem Sprung)
+const warm = (artistId: string) => {
+  provider.getArtist(artistId).catch(() => {});
+  for (const group of RELEASE_GROUPS) provider.getReleases(artistId, group, 0, PAGE_SIZE).catch(() => {});
+};
+
 // WebSocket für Lobby und Spiel
-const game = new GameServer(provider);
+const game = new GameServer(provider, warm);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 const alive = new WeakMap<WebSocket, boolean>();
 

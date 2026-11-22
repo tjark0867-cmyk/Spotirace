@@ -136,7 +136,7 @@ const RELEASE_BY_ID = new Map(RELEASES.map((r) => [r.id, r]));
 function artistSummary(id: string): ArtistSummary {
   const a = ARTISTS[id];
   if (!a) throw new ProviderError(404, 'Artist nicht gefunden');
-  return { id, name: a.name, image: `/demo/artist/${id}.svg`, genres: a.genres, url: null };
+  return { id, name: a.name, image: `/demo/artist/${id}.svg`, imageSmall: `/demo/artist/${id}.svg`, genres: a.genres, url: null };
 }
 
 const ref = (id: string) => ({ id, name: ARTISTS[id]?.name ?? id });
@@ -146,6 +146,7 @@ function releaseSummary(r: DemoRelease): ReleaseSummary {
     id: r.id,
     name: r.name,
     cover: `/demo/cover/${r.id}.svg`,
+    coverSmall: `/demo/cover/${r.id}.svg`,
     year: r.year,
     type: r.type,
     totalTracks: r.tracks.length,
@@ -195,6 +196,7 @@ export class DemoProvider implements MusicProvider {
       id: r.id,
       name: r.name,
       cover: `/demo/cover/${r.id}.svg`,
+      coverSmall: `/demo/cover/${r.id}.svg`,
       type: r.type,
       year: r.year,
       totalTracks: r.tracks.length,
@@ -210,6 +212,10 @@ export class DemoProvider implements MusicProvider {
       })),
       url: null,
     };
+  }
+
+  async popularArtists(): Promise<ArtistSummary[]> {
+    return ['nova', 'kaito', 'kompass', 'pia', 'jaylen', 'sora', 'rico', 'mila'].map(artistSummary);
   }
 
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {

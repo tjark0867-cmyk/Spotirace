@@ -19,6 +19,8 @@ export interface MusicProvider {
   getReleases(artistId: string, group: ReleaseGroup, offset: number, count: number): Promise<ReleasePage>;
   getAlbum(id: string): Promise<AlbumDetail>;
   randomArtist(excludeIds: string[]): Promise<ArtistSummary>;
+  /** Bekannte Artists als Vorschläge für die Suche */
+  popularArtists(): Promise<ArtistSummary[]>;
 }
 
 export class ProviderError extends Error {

@@ -79,6 +79,7 @@ function sanitizeArtist(a: ArtistSummary): ArtistSummary {
     id: String(a.id).slice(0, 64),
     name: String(a.name).slice(0, 200),
     image: typeof a.image === 'string' ? a.image.slice(0, 500) : null,
+    imageSmall: typeof a.imageSmall === 'string' ? a.imageSmall.slice(0, 500) : null,
     genres: Array.isArray(a.genres) ? a.genres.slice(0, 5).map((g) => String(g).slice(0, 50)) : [],
     url: typeof a.url === 'string' ? a.url.slice(0, 300) : null,
   };
@@ -91,7 +92,11 @@ export class GameServer {
   /** sessionId → aktive Verbindung (auch ohne Raum) */
   private sessionSocket = new Map<string, WebSocket>();
 
-  constructor(private provider: MusicProvider) {
+  constructor(
+    private provider: MusicProvider,
+    /** Lädt eine Artist-Seite schon mal in den Cache, damit sie gleich sofort da ist */
+    private warm: (artistId: string) => void = () => {},
+  ) {
     setInterval(() => this.sweep(), 60_000).unref();
   }
 
@@ -229,6 +234,7 @@ export class GameServer {
         if (artist && other && other.id === artist.id) throw new GameError('Start und Ziel müssen verschiedene Artists sein');
         if (msg.which === 'start') room.start = artist;
         else room.target = artist;
+        if (artist && msg.which === 'start') this.warm(artist.id);
         return this.broadcast(room);
       }
 
@@ -454,12 +460,14 @@ export class GameServer {
       if (!ids.includes(artistId)) throw new GameError('Dieser Artist ist auf dem Song nicht dabei');
       if (artistId === current.id) throw new GameError('Da bist du schon');
 
+      // Neue Artist-Seite schon laden, während wir die Antwort schicken
+      this.warm(artistId);
       let artist: ArtistSummary;
       try {
         artist = await this.provider.getArtist(artistId);
       } catch {
         const ref = track.artists.find((a) => a.id === artistId)!;
-        artist = { id: ref.id, name: ref.name, image: null, genres: [], url: null };
+        artist = { id: ref.id, name: ref.name, image: null, imageSmall: null, genres: [], url: null };
       }
 
       // Während wir gewartet haben, könnte die Runde vorbei sein
@@ -470,7 +478,7 @@ export class GameServer {
       player.stack.push(artist);
       player.path.push({
         artist,
-        via: { trackId: track.id, trackName: track.name, albumId: album.id, albumName: album.name, cover: album.cover },
+        via: { trackId: track.id, trackName: track.name, albumId: album.id, albumName: album.name, cover: album.coverSmall ?? album.cover },
         back: false,
         atMs: now - room.startAt,
       });

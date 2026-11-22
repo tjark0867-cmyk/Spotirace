@@ -4,6 +4,7 @@ import { copyText, useGame } from '../lib/useGame';
 import { CloseIcon, CopyIcon, ExitIcon, UsersIcon } from './Icons';
 import { Logo } from './Logo';
 import { PlayersPanel } from './PlayersPanel';
+import { SoundToggle } from './SoundToggle';
 
 function RoomCode({ code }: { code: string }) {
   const { toast } = useGame();
@@ -49,6 +50,7 @@ export function AppShell({
       <div className="flex items-center justify-between gap-2 rounded-lg bg-sp-base px-3 py-2 lg:hidden">
         <Logo size={26} />
         <div className="flex items-center gap-1.5">
+          <SoundToggle />
           <RoomCode code={state.code} />
           <button
             type="button"
@@ -65,6 +67,8 @@ export function AppShell({
         <aside className="hidden w-[300px] shrink-0 flex-col gap-2 lg:flex">
           <div className="flex items-center justify-between rounded-lg bg-sp-base px-5 py-4">
             <Logo size={30} />
+            <div className="flex items-center gap-1">
+            <SoundToggle />
             <button
               type="button"
               onClick={leave}
@@ -73,6 +77,7 @@ export function AppShell({
             >
               <ExitIcon size={18} />
             </button>
+            </div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col rounded-lg bg-sp-base pt-3">
             <div className="flex items-center justify-between px-4 pb-3">

@@ -26,4 +26,7 @@ export class MissingKeysProvider implements MusicProvider {
   async randomArtist(): Promise<ArtistSummary> {
     return this.fail();
   }
+  async popularArtists(): Promise<ArtistSummary[]> {
+    return this.fail();
+  }
 }

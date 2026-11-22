@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ClientMessage, PlayerPublic, RoomState, ServerMessage } from '../../../shared/types';
+import { sound } from './sound';
 
 export interface Toast {
   id: number;
@@ -98,6 +99,7 @@ export function useGameConnection() {
             break;
           case 'moveFailed':
             setPendingMove(null);
+            sound.play('error');
             toast(msg.message, 'error');
             break;
           case 'error':

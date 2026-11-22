@@ -5,6 +5,7 @@ import { Cover } from '../components/Media';
 import { api } from '../lib/api';
 import { useDominantColor } from '../lib/color';
 import { formatAlbumLength, formatTrackDuration, plural, releaseTypeLabel } from '../lib/format';
+import { sound } from '../lib/sound';
 import { useGame } from '../lib/useGame';
 
 function useAlbum(albumId: string) {
@@ -47,6 +48,7 @@ function TrackRow({
         playable ? 'hover:bg-white/[0.08]' : 'opacity-40'
       }`}
       title={playable ? undefined : `${current.name} ist auf diesem Song nicht dabei`}
+      onClick={playable ? undefined : () => sound.play('denied')}
     >
       <div className="text-right text-base tabular-nums text-sp-sub">
         {playable ? track.number : <LockIcon size={14} className="ml-auto" />}
@@ -117,6 +119,17 @@ export function AlbumView({
     if (data) onLoaded?.(data);
   }, [data, onLoaded]);
 
+  // Die Artists, zu denen man von hier springen kann, schon mal vorladen → nach dem Klick ist die Seite sofort da
+  useEffect(() => {
+    if (!data || !canMove) return;
+    const ids = new Set<string>();
+    for (const t of data.tracks) {
+      if (!t.artists.some((a) => a.id === current.id)) continue;
+      for (const a of t.artists) if (a.id !== current.id) ids.add(a.id);
+    }
+    [...ids].slice(0, 6).forEach((id) => api.artistPage(id).catch(() => {}));
+  }, [data, current.id, canMove]);
+
   if (error) {
     return (
       <div className="px-8 py-24 text-center">
@@ -140,7 +153,7 @@ export function AlbumView({
         <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/10 to-black/55" />
         <div className="relative flex flex-col items-center gap-5 px-5 pb-6 pt-[72px] text-center sm:flex-row sm:items-end sm:gap-7 sm:px-8 sm:pt-20 sm:text-left">
           {data ? (
-            <Cover src={data.cover} alt={data.name} className="w-[200px] shrink-0 shadow-[0_8px_40px_rgba(0,0,0,.55)] sm:w-[232px]" rounded="rounded" />
+            <Cover src={data.cover} alt={data.name} eager className="w-[200px] shrink-0 shadow-[0_8px_40px_rgba(0,0,0,.55)] sm:w-[232px]" rounded="rounded" />
           ) : (
             <div className="skeleton aspect-square w-[200px] shrink-0 rounded sm:w-[232px]" />
           )}

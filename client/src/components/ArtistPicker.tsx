@@ -1,9 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ArtistSummary } from '../../../shared/types';
 import { api } from '../lib/api';
+import { sound } from '../lib/sound';
 import { useGame } from '../lib/useGame';
 import { CloseIcon, SearchIcon, ShuffleIcon } from './Icons';
 import { ArtistImage } from './Media';
+
+function ResultRow({ artist, onPick }: { artist: ArtistSummary; onPick: (a: ArtistSummary) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(artist)}
+      className="flex w-full items-center gap-3 rounded-md p-2 text-left transition hover:bg-white/10"
+    >
+      <ArtistImage artist={artist} size={44} />
+      <div className="min-w-0">
+        <div className="truncate font-semibold">{artist.name}</div>
+        <div className="truncate text-xs text-sp-sub">Künstler:in{artist.genres[0] ? ` · ${artist.genres[0]}` : ''}</div>
+      </div>
+    </button>
+  );
+}
 
 interface Props {
   label: string;
@@ -22,6 +39,15 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [randomLoading, setRandomLoading] = useState(false);
+  const [popular, setPopular] = useState<ArtistSummary[] | null>(null);
+
+  const loadPopular = () => {
+    if (popular) return;
+    api
+      .popular()
+      .then(setPopular)
+      .catch(() => setPopular([]));
+  };
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Suche mit Verzögerung, damit nicht jeder Tastendruck eine Anfrage auslöst
@@ -60,6 +86,7 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
       toast('Start und Ziel müssen verschiedene Artists sein', 'error');
       return;
     }
+    sound.play('pick');
     onChange(artist);
     setQuery('');
     setResults([]);
@@ -138,30 +165,33 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
                 setQuery(e.target.value);
                 setOpen(true);
               }}
-              onFocus={() => setOpen(true)}
+              onFocus={() => {
+                setOpen(true);
+                loadPopular();
+              }}
+              onPointerDown={loadPopular}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && results[0]) pick(results[0]);
                 if (e.key === 'Escape') setOpen(false);
               }}
             />
           </div>
+          {open && query.trim().length < 2 && popular && popular.length > 0 && (
+            <div className="sp-scroll absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-md bg-sp-elevated p-1 shadow-[0_16px_24px_rgba(0,0,0,.5)]">
+              <div className="px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-widest text-sp-sub">Beliebte Artists</div>
+              {popular
+                .filter((a) => a.id !== excludeId && a.id !== value?.id)
+                .map((a) => (
+                  <ResultRow key={a.id} artist={a} onPick={pick} />
+                ))}
+            </div>
+          )}
           {open && query.trim().length >= 2 && (
             <div className="sp-scroll absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-md bg-sp-elevated p-1 shadow-[0_16px_24px_rgba(0,0,0,.5)]">
               {loading && results.length === 0 && <div className="px-3 py-3 text-sm text-sp-sub">Suche …</div>}
               {!loading && results.length === 0 && <div className="px-3 py-3 text-sm text-sp-sub">Keine Artists gefunden</div>}
               {results.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => pick(a)}
-                  className="flex w-full items-center gap-3 rounded-md p-2 text-left transition hover:bg-white/10"
-                >
-                  <ArtistImage artist={a} size={44} />
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold">{a.name}</div>
-                    <div className="truncate text-xs text-sp-sub">Künstler:in{a.genres[0] ? ` · ${a.genres[0]}` : ''}</div>
-                  </div>
-                </button>
+                <ResultRow key={a.id} artist={a} onPick={pick} />
               ))}
             </div>
           )}

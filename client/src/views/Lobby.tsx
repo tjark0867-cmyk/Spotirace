@@ -2,6 +2,9 @@ import type { GameSettings, RoomState, TimeLimit } from '../../../shared/types';
 import { AppShell } from '../components/AppShell';
 import { ArtistPicker } from '../components/ArtistPicker';
 import { ArrowRightIcon, CheckIcon, CopyIcon, PlayIcon } from '../components/Icons';
+import { useEffect } from 'react';
+import { api } from '../lib/api';
+import { sound } from '../lib/sound';
 import { copyText, useGame } from '../lib/useGame';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled: boolean }) {
@@ -21,7 +24,10 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 
 function SettingsCard({ settings, editable }: { settings: GameSettings; editable: boolean }) {
   const { send } = useGame();
-  const set = (s: Partial<GameSettings>) => send({ t: 'settings', settings: s });
+  const set = (s: Partial<GameSettings>) => {
+    sound.play('tap');
+    send({ t: 'settings', settings: s });
+  };
   const limits: TimeLimit[] = [0, 5, 10, 15];
   return (
     <div className="rounded-lg bg-sp-card p-5">
@@ -67,6 +73,12 @@ function SettingsCard({ settings, editable }: { settings: GameSettings; editable
 
 export function Lobby({ state }: { state: RoomState }) {
   const { send, me, toast } = useGame();
+
+  // Start-Artist schon in der Lobby laden → beim Countdown ist alles da
+  const startId = state.start?.id;
+  useEffect(() => {
+    if (startId) api.artistPage(startId).catch(() => {});
+  }, [startId]);
   const isHost = !!me?.isHost;
   const others = state.players.filter((p) => !p.isHost && p.connected);
   const notReady = others.filter((p) => !p.ready);
@@ -139,7 +151,10 @@ export function Lobby({ state }: { state: RoomState }) {
               <button
                 type="button"
                 className={me?.ready ? 'btn-outline border-sp-green px-12 py-4 text-lg text-sp-green-bright' : 'btn-green px-12 py-4 text-lg'}
-                onClick={() => send({ t: 'ready', ready: !me?.ready })}
+                onClick={() => {
+                  sound.play(me?.ready ? 'tap' : 'ready');
+                  send({ t: 'ready', ready: !me?.ready });
+                }}
               >
                 {me?.ready ? (
                   <>

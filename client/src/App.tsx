@@ -3,6 +3,7 @@ import { LogoMark } from './components/Logo';
 import { Toasts } from './components/Toasts';
 import { api } from './lib/api';
 import { GameContext, useGameConnection } from './lib/useGame';
+import { useSoundEffects } from './lib/useSoundEffects';
 import { Game } from './views/Game';
 import { Home } from './views/Home';
 import { Lobby } from './views/Lobby';
@@ -13,6 +14,7 @@ export function App() {
   const { state, inRoom, connection, toasts } = game;
   const [demo, setDemo] = useState(false);
   const wasInRoom = useRef(false);
+  useSoundEffects(state);
 
   useEffect(() => {
     api.config().then((c) => setDemo(c.demo)).catch(() => {});

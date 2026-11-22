@@ -1,7 +1,8 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import {
   RELEASE_GROUPS,
   type AppConfig,
@@ -13,7 +14,7 @@ import { demoSvg } from './music/demo';
 import { ProviderError, type MusicProvider } from './music/types';
 
 const DIST_DIR = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -31,22 +32,66 @@ const MIME: Record<string, string> = {
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
-function sendJson(res: ServerResponse, status: number, body: unknown) {
+function acceptsGzip(req: IncomingMessage | null) {
+  return /\bgzip\b/.test(String(req?.headers['accept-encoding'] ?? ''));
+}
+
+function sendJson(req: IncomingMessage, res: ServerResponse, status: number, body: unknown, cacheSeconds = 0) {
   const json = JSON.stringify(body);
-  res.writeHead(status, {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-  });
+    'Cache-Control': cacheSeconds > 0 ? `private, max-age=${cacheSeconds}` : 'no-store',
+    Vary: 'Accept-Encoding',
+  };
+  // Größere Antworten komprimieren → deutlich schneller übers Handy-Netz
+  if (json.length > 1024 && acceptsGzip(req)) {
+    headers['Content-Encoding'] = 'gzip';
+    res.writeHead(status, headers);
+    res.end(gzipSync(json, { level: 6 }));
+    return;
+  }
+  res.writeHead(status, headers);
   res.end(json);
 }
 
-function sendError(res: ServerResponse, err: unknown) {
+/** Alle Dateien aus dist/ einmal beim Start laden und vorkomprimieren (Brotli + Gzip) */
+interface StaticFile {
+  raw: Buffer;
+  br: Buffer | null;
+  gz: Buffer | null;
+  type: string;
+  immutable: boolean;
+}
+function loadStatic(dir: string): Map<string, StaticFile> {
+  const files = new Map<string, StaticFile>();
+  if (!existsSync(dir)) return files;
+  const walk = (d: string): string[] =>
+    readdirSync(d).flatMap((f) => {
+      const p = join(d, f);
+      return statSync(p).isDirectory() ? walk(p) : [p];
+    });
+  for (const path of walk(dir)) {
+    const raw = readFileSync(path);
+    const ext = extname(path);
+    const compressible = ['.html', '.js', '.css', '.svg', '.json', '.txt'].includes(ext) && raw.length > 512;
+    files.set('/' + relative(dir, path).split('\\').join('/'), {
+      raw,
+      br: compressible ? brotliCompressSync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 10 } }) : null,
+      gz: compressible ? gzipSync(raw, { level: 9 }) : null,
+      type: MIME[ext] ?? 'application/octet-stream',
+      immutable: path.includes(join(dir, 'assets')),
+    });
+  }
+  return files;
+}
+
+function sendError(req: IncomingMessage, res: ServerResponse, err: unknown) {
   if (err instanceof ProviderError) {
-    sendJson(res, err.status, { error: err.message });
+    sendJson(req, res, err.status, { error: err.message });
     return;
   }
   console.error('[http] Fehler:', err);
-  sendJson(res, 500, { error: 'Interner Fehler' });
+  sendJson(req, res, 500, { error: 'Interner Fehler' });
 }
 
 function emptyPage(group: ReleaseGroup, error: string): ReleasePage {
@@ -54,28 +99,32 @@ function emptyPage(group: ReleaseGroup, error: string): ReleasePage {
 }
 
 export function createHttpHandler(provider: MusicProvider, getConfig: () => AppConfig) {
-  async function handleApi(url: URL, res: ServerResponse) {
+  async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse) {
     const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
 
-    if (parts[1] === 'config') return sendJson(res, 200, getConfig());
+    if (parts[1] === 'config') return sendJson(req, res, 200, getConfig());
 
     if (parts[1] === 'search') {
       const q = (url.searchParams.get('q') ?? '').slice(0, 100);
-      return sendJson(res, 200, await provider.searchArtists(q));
+      return sendJson(req, res, 200, await provider.searchArtists(q), 300);
+    }
+
+    if (parts[1] === 'popular') {
+      return sendJson(req, res, 200, await provider.popularArtists(), 600);
     }
 
     if (parts[1] === 'random-artist') {
       const exclude = (url.searchParams.get('exclude') ?? '').split(',').filter(Boolean);
-      return sendJson(res, 200, await provider.randomArtist(exclude));
+      return sendJson(req, res, 200, await provider.randomArtist(exclude));
     }
 
     if (parts[1] === 'artist' && parts[2] && ID_RE.test(parts[2])) {
       const id = parts[2];
       if (parts[3] === 'releases') {
         const group = url.searchParams.get('group') as ReleaseGroup;
-        if (!RELEASE_GROUPS.includes(group)) return sendJson(res, 400, { error: 'Ungültige Kategorie' });
+        if (!RELEASE_GROUPS.includes(group)) return sendJson(req, res, 400, { error: 'Ungültige Kategorie' });
         const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-        return sendJson(res, 200, await provider.getReleases(id, group, offset, PAGE_SIZE));
+        return sendJson(req, res, 200, await provider.getReleases(id, group, offset, PAGE_SIZE), 3600);
       }
       const [artist, ...pages] = await Promise.all([
         provider.getArtist(id),
@@ -92,18 +141,20 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         artist,
         sections: Object.fromEntries(pages.map((p) => [p.group, p])) as ArtistPage['sections'],
       };
-      return sendJson(res, 200, body);
+      return sendJson(req, res, 200, body, 3600);
     }
 
     if (parts[1] === 'album' && parts[2] && ID_RE.test(parts[2])) {
-      return sendJson(res, 200, await provider.getAlbum(parts[2]));
+      return sendJson(req, res, 200, await provider.getAlbum(parts[2]), 3600);
     }
 
-    sendJson(res, 404, { error: 'Nicht gefunden' });
+    sendJson(req, res, 404, { error: 'Nicht gefunden' });
   }
 
-  function serveStatic(pathname: string, res: ServerResponse) {
-    if (!existsSync(DIST_DIR)) {
+  const staticFiles = loadStatic(DIST_DIR);
+
+  function serveStatic(req: IncomingMessage, pathname: string, res: ServerResponse) {
+    if (staticFiles.size === 0) {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(
         'Spotirace-Server läuft.\n\nIm Entwicklungsmodus öffnest du http://localhost:5173\n' +
@@ -111,23 +162,27 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
       );
       return;
     }
-    let filePath = normalize(join(DIST_DIR, decodeURIComponent(pathname)));
-    if (!filePath.startsWith(DIST_DIR)) {
-      res.writeHead(403);
-      res.end();
-      return;
+    let key = normalize(decodeURIComponent(pathname)).split('\\').join('/');
+    // SPA-Fallback: alle unbekannten Pfade liefern die App aus
+    if (!staticFiles.has(key)) key = '/index.html';
+    const file = staticFiles.get(key)!;
+    const accept = String(req.headers['accept-encoding'] ?? '');
+    const headers: Record<string, string> = {
+      'Content-Type': file.type,
+      'Cache-Control': file.immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+      Vary: 'Accept-Encoding',
+    };
+    let body = file.raw;
+    if (file.br && /\bbr\b/.test(accept)) {
+      body = file.br;
+      headers['Content-Encoding'] = 'br';
+    } else if (file.gz && /\bgzip\b/.test(accept)) {
+      body = file.gz;
+      headers['Content-Encoding'] = 'gzip';
     }
-    if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
-      // SPA-Fallback: alle unbekannten Pfade liefern die App aus
-      filePath = join(DIST_DIR, 'index.html');
-    }
-    const ext = extname(filePath);
-    const isAsset = filePath.includes(`${join(DIST_DIR, 'assets')}`);
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] ?? 'application/octet-stream',
-      'Cache-Control': isAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
-    });
-    createReadStream(filePath).pipe(res);
+    headers['Content-Length'] = String(body.length);
+    res.writeHead(200, headers);
+    res.end(req.method === 'HEAD' ? undefined : body);
   }
 
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -141,7 +196,7 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
       }
 
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(url, res);
+        await handleApi(url, req, res);
         return;
       }
 
@@ -158,9 +213,9 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         return;
       }
 
-      serveStatic(url.pathname, res);
+      serveStatic(req, url.pathname, res);
     } catch (err) {
-      sendError(res, err);
+      sendError(req, res, err);
     }
   };
 }

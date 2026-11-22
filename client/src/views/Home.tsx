@@ -3,7 +3,9 @@ import { ArrowRightIcon, FlagIcon, MouseClickIcon, UsersIcon } from '../componen
 import { Logo } from '../components/Logo';
 import type { SetupStatus } from '../../../shared/types';
 import { SetupBox } from '../components/SetupBox';
+import { SoundToggle } from '../components/SoundToggle';
 import { api } from '../lib/api';
+import { sound } from '../lib/sound';
 import { useGame } from '../lib/useGame';
 
 const NAME_KEY = 'spotirace.name';
@@ -58,11 +60,13 @@ export function Home() {
   };
 
   const create = () => {
+    sound.play('tap');
     saveName();
     send({ t: 'create', name });
   };
   const join = () => {
     if (!code.trim()) return;
+    sound.play('tap');
     saveName();
     send({ t: 'join', code: code.trim().toUpperCase(), name });
   };
@@ -71,7 +75,8 @@ export function Home() {
   const online = connection === 'open';
 
   return (
-    <div className="min-h-dvh bg-[radial-gradient(ellipse_at_top,#1f6b3b_0%,#0f2a19_35%,#000_75%)] px-4 py-10 sm:py-16">
+    <div className="relative min-h-dvh bg-[radial-gradient(ellipse_at_top,#1f6b3b_0%,#0f2a19_35%,#000_75%)] px-4 py-10 sm:py-16">
+      <SoundToggle className="absolute right-3 top-3" />
       <div className="mx-auto flex max-w-[440px] flex-col items-center">
         <Logo size={52} />
         <p className="mt-4 text-center text-lg text-sp-sub">

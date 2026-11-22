@@ -9,6 +9,7 @@ import type {
 } from '../../shared/types';
 import { Limiter, TtlCache } from '../cache';
 import { RANDOM_ARTIST_NAMES } from './randomArtists';
+import { deezerChartNames, deezerFans, normName } from './deezer';
 import { ProviderError, type MusicProvider } from './types';
 
 const DEFAULT_API = 'https://api.spotify.com/v1';
@@ -52,6 +53,13 @@ function largestImage(images: SpImage[] | undefined): string | null {
   return sorted[0]?.url ?? null;
 }
 
+/** Kleinstes Bild, das noch mindestens ~250 px breit ist (Spotify: 300 bzw. 320 px) → schnelleres Laden */
+function smallImage(images: SpImage[] | undefined): string | null {
+  if (!images || images.length === 0) return null;
+  const sorted = [...images].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (sorted.find((i) => (i.width ?? 0) >= 250) ?? sorted[sorted.length - 1])?.url ?? null;
+}
+
 const toRef = (a: SpArtistSimple): ArtistRef => ({ id: a.id, name: a.name });
 
 function toArtist(a: SpArtist): ArtistSummary {
@@ -59,6 +67,7 @@ function toArtist(a: SpArtist): ArtistSummary {
     id: a.id,
     name: a.name,
     image: largestImage(a.images),
+    imageSmall: smallImage(a.images),
     genres: a.genres ?? [],
     url: a.external_urls?.spotify ?? `https://open.spotify.com/artist/${a.id}`,
   };
@@ -69,6 +78,7 @@ function toRelease(a: SpAlbumSimple): ReleaseSummary {
     id: a.id,
     name: a.name,
     cover: largestImage(a.images),
+    coverSmall: smallImage(a.images),
     year: (a.release_date ?? '').slice(0, 4),
     type: a.album_type,
     totalTracks: a.total_tracks,
@@ -93,7 +103,7 @@ export class SpotifyProvider implements MusicProvider {
   private token: { value: string; expiresAt: number } | null = null;
   private tokenPromise: Promise<string> | null = null;
   private cache = new TtlCache(8000);
-  private limiter = new Limiter(6);
+  private limiter = new Limiter(10);
   /** Max. Seitengröße für Listen – wird automatisch verkleinert, falls Spotify 50 ablehnt */
   private pageSize = 50;
   // Nur zum Testen überschreibbar
@@ -113,14 +123,26 @@ export class SpotifyProvider implements MusicProvider {
     if (this.tokenPromise) return this.tokenPromise;
     this.tokenPromise = (async () => {
       const basic = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
-      const res = await fetch(this.tokenUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${basic}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'grant_type=client_credentials',
-      });
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 3 && !res; attempt++) {
+        try {
+          res = await fetch(this.tokenUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Basic ${basic}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'grant_type=client_credentials',
+            signal: AbortSignal.timeout(10_000),
+          });
+        } catch (err) {
+          if (attempt === 2) {
+            throw new ProviderError(502, `Spotify nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          await sleep(400 * (attempt + 1));
+        }
+      }
+      if (!res) throw new ProviderError(502, 'Spotify nicht erreichbar');
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         const invalid = /invalid_client/i.test(text) || res.status === 400 || res.status === 401;
@@ -156,7 +178,19 @@ export class SpotifyProvider implements MusicProvider {
   private async request<T>(pathOrUrl: string, attempt = 0): Promise<T> {
     const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${this.api}${pathOrUrl}`;
     const token = await this.getToken();
-    const res = await this.limiter.run(() => fetch(url, { headers: { Authorization: `Bearer ${token}` } }));
+    let res: Response;
+    try {
+      res = await this.limiter.run(() =>
+        fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) }),
+      );
+    } catch (err) {
+      // Netzwerk-Schluckauf (Verbindung abgebrochen, Timeout) → kurz warten und nochmal
+      if (attempt < 2) {
+        await sleep(300 * (attempt + 1));
+        return this.request<T>(pathOrUrl, attempt + 1);
+      }
+      throw new ProviderError(502, `Spotify nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     if (res.status === 401 && attempt < 2) {
       this.token = null;
@@ -189,49 +223,109 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   /**
-   * Lädt eine Liste seitenweise. Falls Spotify die Seitengröße 50 ablehnt,
+   * Lädt eine Liste seitenweise: erst eine Seite (liefert die Gesamtzahl), dann alle
+   * weiteren Seiten gleichzeitig. Falls Spotify die Seitengröße 50 ablehnt,
    * wird automatisch auf 10 umgestellt.
    */
   private async fetchRange<T>(
     buildPath: (limit: number, offset: number) => string,
     offset: number,
     count: number,
-  ): Promise<{ items: T[]; total: number }> {
-    const items: T[] = [];
-    let total = 0;
-    let cursor = offset;
-    while (items.length < count) {
-      const limit = Math.min(this.pageSize, count - items.length);
-      let page: SpPaging<T>;
+  ): Promise<{ items: T[]; total: number; covered: number }> {
+    let first: SpPaging<T>;
+    let limit = Math.min(this.pageSize, count);
+    for (;;) {
       try {
-        page = await this.request<SpPaging<T>>(buildPath(limit, cursor));
+        first = await this.request<SpPaging<T>>(buildPath(limit, offset));
+        break;
       } catch (err) {
         if (err instanceof ProviderError && err.status === 502 && /limit/i.test(err.message) && this.pageSize > 10) {
           console.warn('[spotify] Seitengröße 50 abgelehnt – nutze ab jetzt 10');
           this.pageSize = 10;
+          limit = Math.min(this.pageSize, count);
           continue;
         }
         throw err;
       }
-      total = page.total;
-      items.push(...page.items);
-      cursor += page.items.length;
-      if (!page.next || page.items.length === 0 || cursor >= total) break;
     }
-    return { items, total };
+    const total = first.total;
+    const end = Math.min(total, offset + count);
+    const items: T[] = [...first.items];
+    // Spotify zählt Offsets in der ungefilterten Liste → immer um "limit" weiterspringen
+    const offsets: number[] = [];
+    for (let o = offset + limit; o < end; o += limit) offsets.push(o);
+    if (offsets.length > 0) {
+      const pages = await Promise.all(offsets.map((o) => this.request<SpPaging<T>>(buildPath(Math.min(limit, end - o), o))));
+      for (const page of pages) items.push(...page.items);
+    }
+    return { items, total, covered: Math.max(end, offset + first.items.length) };
   }
 
-  // ---------- MusicProvider ----------
-
-  async searchArtists(query: string): Promise<ArtistSummary[]> {
-    const q = query.trim();
-    if (!q) return [];
-    return this.cache.wrap(`search:${q.toLowerCase()}`, HOUR, async () => {
-      // Development Mode: max. 10 Ergebnisse
+  /** Reine Spotify-Suche (max. 10 Ergebnisse im Development Mode) */
+  private async rawSearch(q: string): Promise<ArtistSummary[]> {
+    return this.cache.wrap(`rawsearch:${q.toLowerCase()}`, HOUR, async () => {
       const json = await this.request<{ artists: SpPaging<SpArtist> }>(
         `/search?q=${encodeURIComponent(q)}&type=artist&limit=10`,
       );
       return json.artists.items.map(toArtist);
+    });
+  }
+
+  /**
+   * Suche mit "Bekannteste zuerst": Spotify liefert keine Popularität mehr, deshalb
+   * kombinieren wir Deezer-Fanzahlen, unsere Liste bekannter Artists und die Spotify-Reihenfolge.
+   */
+  async searchArtists(query: string): Promise<ArtistSummary[]> {
+    const q = query.trim();
+    if (!q) return [];
+    return this.cache.wrap(`search:${q.toLowerCase()}`, HOUR, async () => {
+      const [items, fans] = await Promise.all([this.rawSearch(q), deezerFans(q)]);
+      const nq = normName(q);
+      const famous = new Set(RANDOM_ARTIST_NAMES.map(normName));
+      const score = (a: ArtistSummary, index: number) => {
+        const n = normName(a.name);
+        const f = fans.get(n) ?? 0;
+        return (
+          Math.log10(f + 1) +
+          (famous.has(n) ? 2 : 0) +
+          (n === nq ? 1 : n.startsWith(nq) ? 0.4 : 0) +
+          (a.image ? 0.2 : -0.6) -
+          index * 0.08
+        );
+      };
+      return items
+        .map((a, i) => ({ a, s: score(a, i) }))
+        .sort((x, y) => y.s - x.s)
+        .map((x) => x.a);
+    });
+  }
+
+  /** Vorschläge: aktuelle Deezer-Charts + unsere Liste bekannter Artists, passend bei Spotify gesucht */
+  async popularArtists(): Promise<ArtistSummary[]> {
+    return this.cache.wrap('popular', 12 * HOUR, async () => {
+      const chart = await deezerChartNames(16);
+      const names: string[] = [];
+      const seen = new Set<string>();
+      for (const name of [...chart.slice(0, 10), ...RANDOM_ARTIST_NAMES]) {
+        const n = normName(name);
+        if (seen.has(n)) continue;
+        seen.add(n);
+        names.push(name);
+        if (names.length >= 16) break;
+      }
+      const results: Array<ArtistSummary | null> = await Promise.all(
+        names.map(async (name) => {
+          try {
+            const hits = await this.rawSearch(name);
+            return hits.find((a) => normName(a.name) === normName(name)) ?? null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const list = results.filter((a): a is ArtistSummary => !!a);
+      if (list.length === 0) throw new ProviderError(502, 'Konnte keine Vorschläge laden');
+      return list;
     });
   }
 
@@ -244,19 +338,21 @@ export class SpotifyProvider implements MusicProvider {
     return this.cache.wrap(key, DAY, async () => {
       // Pro Kategorie eine eigene Anfrage, weil "album_group" im Development Mode fehlt
       const market = this.market ? `&market=${encodeURIComponent(this.market)}` : '';
-      const { items, total } = await this.fetchRange<SpAlbumSimple>(
+      const { items, total, covered } = await this.fetchRange<SpAlbumSimple>(
         (limit, off) =>
           `/artists/${encodeURIComponent(artistId)}/albums?include_groups=${group}&limit=${limit}&offset=${off}${market}`,
         offset,
         count,
       );
-      const end = offset + items.length;
+      // Doppelte Einträge (kommen bei Spotify manchmal vor) entfernen
+      const seen = new Set<string>();
+      const unique = items.filter((a) => a && !seen.has(a.id) && seen.add(a.id));
       return {
         group,
-        items: items.map(toRelease),
+        items: unique.map(toRelease),
         total,
         offset,
-        next: end < total && items.length > 0 ? end : null,
+        next: covered < total ? covered : null,
       };
     });
   }
@@ -277,6 +373,7 @@ export class SpotifyProvider implements MusicProvider {
         id: album.id,
         name: album.name,
         cover: largestImage(album.images),
+        coverSmall: smallImage(album.images),
         type: album.album_type,
         year: (album.release_date ?? '').slice(0, 4),
         totalTracks: album.total_tracks,
@@ -290,8 +387,8 @@ export class SpotifyProvider implements MusicProvider {
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {
     const names = [...RANDOM_ARTIST_NAMES].sort(() => Math.random() - 0.5);
     for (const name of names.slice(0, 5)) {
-      const results = await this.searchArtists(name);
-      const exact = results.find((a) => a.name.toLowerCase() === name.toLowerCase()) ?? results[0];
+      const results = await this.rawSearch(name);
+      const exact = results.find((a) => normName(a.name) === normName(name)) ?? results[0];
       if (exact && !excludeIds.includes(exact.id)) return exact;
     }
     throw new ProviderError(502, 'Konnte keinen zufälligen Artist finden');

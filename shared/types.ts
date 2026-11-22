@@ -10,7 +10,10 @@ export interface ArtistRef {
 export interface ArtistSummary {
   id: string;
   name: string;
+  /** Größtes Bild (Header) */
   image: string | null;
+  /** Kleineres Bild (~300 px) für Listen und Avatare – lädt schneller */
+  imageSmall: string | null;
   genres: string[];
   url: string | null;
 }
@@ -22,7 +25,10 @@ export const RELEASE_GROUPS: ReleaseGroup[] = ['album', 'single', 'compilation',
 export interface ReleaseSummary {
   id: string;
   name: string;
+  /** Volles Cover in höchster Auflösung */
   cover: string | null;
+  /** Cover in ~300 px für das Raster – lädt viel schneller, ist aber trotzdem vollständig */
+  coverSmall: string | null;
   year: string;
   /** album | single | compilation (Spotify album_type) */
   type: string;
@@ -60,6 +66,7 @@ export interface AlbumDetail {
   id: string;
   name: string;
   cover: string | null;
+  coverSmall: string | null;
   type: string;
   year: string;
   totalTracks: number;

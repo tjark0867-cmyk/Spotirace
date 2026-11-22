@@ -10,6 +10,9 @@ Alle starten beim selben Artist. Ihr klickt euch **nur über gemeinsame Songs** 
 - Volle Album-Cover in höchster Auflösung, Farbverlauf aus dem Cover wie bei Spotify
 - Live-Fortschritt der Gegner, Zeitlimit, Zurück-Button, Ergebnis mit dem kompletten Weg jedes Spielers
 - Der Server prüft jeden Klick – Schummeln geht nicht
+- Soundeffekte (Countdown, Sprünge, Sieg …) – direkt im Browser erzeugt, mit Ton-Schalter oben
+- Bekannte Artists stehen in der Suche oben, beim Antippen der Suche gibt es Vorschläge
+- Schnell: kleine Cover im Raster, komprimierte Daten, Alben und nächste Artists werden schon vorgeladen
 - Läuft auch am Handy
 
 ---
@@ -24,7 +27,7 @@ Das Spiel läuft kostenlos bei [Render](https://render.com). Die Datei `render.y
 4. **Deploy Blueprint** tippen und 2–3 Minuten warten.
 5. Den Service öffnen und oben auf den Link tippen (z. B. `https://spotirace-xxxx.onrender.com`). Diesen Link schickst du deinen Freunden.
 
-Gut zu wissen: Nach 15 Minuten ohne Besucher schläft der kostenlose Server ein. Der erste Aufruf danach dauert etwa eine Minute, dann läuft alles normal.
+Gut zu wissen: Nach 15 Minuten ohne Besucher schläft der kostenlose Server ein. Der erste Aufruf danach dauert etwa eine Minute, dann läuft alles normal. Wer das nicht will, kann bei einem kostenlosen Dienst wie cron-job.org alle 10 Minuten `https://DEIN-LINK.onrender.com/api/config` aufrufen lassen.
 
 > Die Keys gehören nur in Render (bzw. in deine lokale `.env`) – niemals in den Code oder ins Repo.
 
@@ -91,7 +94,7 @@ npm start
 Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spiel ist darauf ausgelegt:
 
 - Der **Besitzer** der App braucht ein aktives **Premium-Abo**, sonst antwortet Spotify mit Fehler 403. Deine Mitspieler brauchen kein Premium und müssen sich nicht einloggen.
-- Es gibt keine Popularitätswerte mehr. Für „Zufällig“ nutzt das Spiel deshalb eine Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
+- Es gibt keine Popularitätswerte mehr. Für die Reihenfolge in der Suche und die Vorschläge fragt der Server deshalb zusätzlich die öffentliche Deezer-API nach Fanzahlen und Charts (ohne Key). Fällt Deezer aus, greift eine Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
 - Jede Kategorie wird einzeln geladen, große Diskografien seitenweise („Mehr laden“). Alle Antworten werden 24 Stunden zwischengespeichert, damit ihr nicht ins Rate-Limit lauft.
 - Falls Spotify für einen Artist bei „Erscheint auf“ nichts liefert, steht dort ein Hinweis – der Rest der Seite funktioniert trotzdem.
 

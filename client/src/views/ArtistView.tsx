@@ -74,10 +74,14 @@ function ReleaseCard({ release, group, onOpen }: { release: ReleaseSummary; grou
     <button
       type="button"
       onClick={onOpen}
+      // Album schon laden, sobald der Finger/die Maus drauf ist → öffnet sich fast sofort
+      onPointerEnter={() => api.album(release.id).catch(() => {})}
+      onPointerDown={() => api.album(release.id).catch(() => {})}
+      onFocus={() => api.album(release.id).catch(() => {})}
       className="group flex flex-col rounded-md p-2.5 text-left transition hover:bg-sp-hover focus-visible:bg-sp-hover focus-visible:outline-none sm:p-3"
     >
       <div className="relative mb-3">
-        <Cover src={release.cover} alt={release.name} className="shadow-[0_8px_24px_rgba(0,0,0,.5)]" />
+        <Cover src={release.coverSmall ?? release.cover} alt={release.name} className="shadow-[0_8px_24px_rgba(0,0,0,.5)]" />
         <span className="absolute bottom-2 right-2 grid h-12 w-12 translate-y-2 place-items-center rounded-full bg-sp-green text-black opacity-0 shadow-[0_8px_8px_rgba(0,0,0,.3)] transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-hover:scale-100 hover:scale-105 hover:bg-sp-green-bright">
           <PlayIcon size={22} />
         </span>

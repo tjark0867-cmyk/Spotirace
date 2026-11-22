@@ -6,6 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, FlagIcon, UndoIcon } from
 import { ArtistImage, Cover } from '../components/Media';
 import { PathChain } from '../components/PathChain';
 import { formatClock } from '../lib/format';
+import { sound } from '../lib/sound';
 import { useGame, useServerNow } from '../lib/useGame';
 import { AlbumView } from './AlbumView';
 import { ArtistView } from './ArtistView';
@@ -23,9 +24,16 @@ function CountdownOverlay({ state }: { state: RoomState }) {
     if (state.phase === 'playing' && remaining < -900) setShow(false);
   }, [state.phase, remaining]);
 
-  if (!show || !state.start || !state.target) return null;
   const n = Math.ceil(remaining / 1000);
   const label = n > 0 ? String(Math.min(n, 3)) : 'Los!';
+
+  // 3 – 2 – 1 – Los! hörbar machen
+  useEffect(() => {
+    if (!show) return;
+    sound.play(label === 'Los!' ? 'go' : 'countTick');
+  }, [label, show]);
+
+  if (!show || !state.start || !state.target) return null;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/85 backdrop-blur-md">
@@ -145,6 +153,12 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
   for (const step of state.yourPath) depth += step.back ? -1 : 1;
   const canBack = playing && state.settings.allowBack && depth > 1;
   const stillPlaying = state.players.filter((p) => p.status === 'playing').length;
+
+  // Die letzten 10 Sekunden ticken
+  const secondsLeft = remaining !== null && state.phase === 'playing' ? Math.ceil(remaining / 1000) : null;
+  useEffect(() => {
+    if (secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 10 && playing) sound.play('tick');
+  }, [secondsLeft, playing]);
 
   return (
     <footer className="grid h-[76px] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-2 sm:gap-4">
@@ -284,18 +298,20 @@ export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
   }, [view]);
 
   const openAlbum = useCallback((release: ReleaseSummary, group: ReleaseGroup) => {
+    sound.play('open');
     artistScroll.current = mainRef.current?.scrollTop ?? 0;
-    setView({ kind: 'album', albumId: release.id, name: release.name, cover: release.cover, group });
+    setView({ kind: 'album', albumId: release.id, name: release.name, cover: release.coverSmall ?? release.cover, group });
     mainRef.current?.scrollTo({ top: 0 });
   }, []);
 
   const backToArtist = useCallback(() => {
+    sound.play('close');
     restoreScroll.current = artistScroll.current;
     setView({ kind: 'artist' });
   }, []);
 
   const onAlbumLoaded = useCallback((album: AlbumDetail) => {
-    setView((v) => (v.kind === 'album' && v.albumId === album.id && !v.cover ? { ...v, cover: album.cover } : v));
+    setView((v) => (v.kind === 'album' && v.albumId === album.id && !v.cover ? { ...v, cover: album.coverSmall ?? album.cover } : v));
   }, []);
 
   // Browser-Zurück (z. B. Wischgeste am Handy) schließt das Album, statt das Spiel zu verlassen

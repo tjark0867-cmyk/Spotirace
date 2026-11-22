@@ -9,12 +9,14 @@ export function ArtistImage({
   size,
   className = '',
 }: {
-  artist: Pick<ArtistSummary, 'id' | 'name' | 'image'>;
+  artist: Pick<ArtistSummary, 'id' | 'name' | 'image'> & { imageSmall?: string | null };
   size: number;
   className?: string;
 }) {
+  // Kleine Avatare laden das kleinere Bild → viel weniger Daten
+  const src = size <= 160 ? (artist.imageSmall ?? artist.image) : artist.image;
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const failed = failedSrc !== null && failedSrc === artist.image;
+  const failed = failedSrc !== null && failedSrc === src;
   const initials = artist.name
     .split(/\s+/)
     .filter(Boolean)
@@ -26,14 +28,15 @@ export function ArtistImage({
       className={`relative shrink-0 overflow-hidden rounded-full ${className}`}
       style={{ width: size, height: size, background: seedColor(artist.id) }}
     >
-      {artist.image && !failed ? (
+      {src && !failed ? (
         <img
-          src={artist.image}
+          src={src}
           alt={artist.name}
           className="h-full w-full object-cover"
-          loading="lazy"
+          loading={size >= 200 ? 'eager' : 'lazy'}
+          decoding="async"
           draggable={false}
-          onError={() => setFailedSrc(artist.image)}
+          onError={() => setFailedSrc(src)}
         />
       ) : (
         <span className="absolute inset-0 grid place-items-center font-bold text-white/90" style={{ fontSize: size * 0.36 }}>
@@ -50,11 +53,13 @@ export function Cover({
   alt,
   className = '',
   rounded = 'rounded-md',
+  eager = false,
 }: {
   src: string | null;
   alt: string;
   className?: string;
   rounded?: string;
+  eager?: boolean;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc !== null && failedSrc === src;
@@ -65,7 +70,8 @@ export function Cover({
           src={src}
           alt={alt}
           className="absolute inset-0 h-full w-full object-contain"
-          loading="lazy"
+          loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
           draggable={false}
           onError={() => setFailedSrc(src)}
         />
