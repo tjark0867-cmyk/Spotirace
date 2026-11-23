@@ -11,7 +11,7 @@ import type {
 import { Limiter, TtlCache, type RemoteStore } from '../cache';
 import type { UsageCounter } from '../usage';
 import { RANDOM_ARTIST_NAMES } from './randomArtists';
-import { deezerChart, deezerFans, deezerPicture, normName } from './deezer';
+import { deezerFans, normName } from './deezer';
 import { ProviderError, type MusicProvider } from './types';
 
 const DEFAULT_API = 'https://api.spotify.com/v1';
@@ -125,6 +125,7 @@ export class SpotifyProvider implements MusicProvider {
 
   private cache: TtlCache;
   private usage: UsageCounter | null;
+  private remote: RemoteStore | null;
 
   constructor(
     private clientId: string,
@@ -134,6 +135,15 @@ export class SpotifyProvider implements MusicProvider {
   ) {
     this.cache = new TtlCache(8000, opts.remote ?? null);
     this.usage = opts.usage ?? null;
+    this.remote = opts.remote ?? null;
+    // Gelernte Seitengröße vom letzten Start übernehmen (spart eine abgelehnte Anfrage)
+    this.remote
+      ?.get('sr:spotify:pageSize')
+      .then((v) => {
+        const n = Number(v?.toString());
+        if (n === 10) this.pageSize = 10;
+      })
+      .catch(() => {});
     // Eine noch laufende Spotify-Sperre vom letzten Serverstart übernehmen
     this.usage?.loadCooldown().then((until) => {
       if (until > Date.now()) {
@@ -311,6 +321,7 @@ export class SpotifyProvider implements MusicProvider {
         if (err instanceof ProviderError && err.status === 502 && /limit/i.test(err.message) && this.pageSize > 10) {
           console.warn(`[spotify] Seitengröße ${this.pageSize} abgelehnt – nutze ab jetzt 10`);
           this.pageSize = 10;
+          this.remote?.set('sr:spotify:pageSize', Buffer.from('10'), 30 * 24 * 3600).catch(() => {});
           limit = Math.min(this.pageSize, count);
           continue;
         }
@@ -370,24 +381,35 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   /**
-   * Vorschläge: aktuelle Deezer-Charts + unsere Liste bekannter Artists.
-   * Kostet KEINE Spotify-Anfragen – erst beim Antippen wird der Artist bei Spotify gesucht.
+   * Vorschläge für die Suche: bekannte Artists, direkt bei Spotify nachgeschlagen
+   * (Bilder und Daten 100 % Spotify). Kostet einmalig ~12 Anfragen und bleibt dann 3 Tage gespeichert.
    */
   async popularArtists(): Promise<PopularArtist[]> {
-    return this.cache.wrap('popular', 12 * HOUR, async () => {
-      const chart = await deezerChart(12);
-      const list: PopularArtist[] = [];
-      const seen = new Set<string>();
-      for (const a of chart.slice(0, 8)) {
-        if (seen.has(normName(a.name))) continue;
-        seen.add(normName(a.name));
-        list.push(a);
-      }
-      const extra = RANDOM_ARTIST_NAMES.filter((n) => !seen.has(normName(n))).slice(0, 14 - list.length);
-      const pictures = await Promise.all(extra.map((n) => deezerPicture(n)));
-      extra.forEach((name, i) => list.push({ name, image: pictures[i] }));
-      return list;
-    });
+    return this.cache.wrap(
+      'popular:v2',
+      12 * HOUR,
+      async () => {
+        const names = RANDOM_ARTIST_NAMES.slice(0, 12);
+        const list: PopularArtist[] = [];
+        // In kleinen Gruppen, damit Spotify nicht bremst
+        for (let i = 0; i < names.length; i += 3) {
+          const chunk = await Promise.all(
+            names.slice(i, i + 3).map(async (name) => {
+              try {
+                const hits = await this.rawSearch(name);
+                return hits.find((a) => normName(a.name) === normName(name)) ?? null;
+              } catch {
+                return null;
+              }
+            }),
+          );
+          for (const a of chunk) if (a) list.push({ name: a.name, image: a.imageSmall ?? a.image, artist: a });
+        }
+        if (list.length === 0) throw new ProviderError(502, 'Vorschläge konnten nicht geladen werden');
+        return list;
+      },
+      KV_DAYS(3),
+    );
   }
 
   async resolveArtist(name: string): Promise<ArtistSummary> {
@@ -402,7 +424,7 @@ export class SpotifyProvider implements MusicProvider {
       `artist:${id}`,
       DAY,
       async () => toArtist(await this.request<SpArtist>(`/artists/${encodeURIComponent(id)}`)),
-      KV_DAYS(3),
+      KV_DAYS(7),
     );
   }
 
@@ -427,7 +449,64 @@ export class SpotifyProvider implements MusicProvider {
         offset,
         next: covered < total ? covered : null,
       };
-    }, KV_DAYS(3));
+    }, KV_DAYS(7));
+  }
+
+  /**
+   * Alben + "Erscheint auf" mit EINER Anfrage: Spotify liefert beide Gruppen zusammen,
+   * wir sortieren selbst – steht der Artist als Album-Artist drin, ist es sein eigenes Album,
+   * sonst wirkt er nur mit. Hat jemand so viele eigene Alben, dass "Erscheint auf" nicht mehr
+   * auf die erste Seite passt, wird es mit einer zweiten Anfrage nachgeladen.
+   */
+  async getInitialSections(artistId: string): Promise<{ album: ReleasePage; appears_on: ReleasePage }> {
+    return this.cache.wrap(
+      `initial:${artistId}`,
+      DAY,
+      async () => {
+        const market = this.market ? `&market=${encodeURIComponent(this.market)}` : '';
+        const count = this.pageCount;
+        const { items, total } = await this.fetchRange<SpAlbumSimple>(
+          (limit, off) =>
+            `/artists/${encodeURIComponent(artistId)}/albums?include_groups=album,appears_on&limit=${limit}&offset=${off}${market}`,
+          0,
+          count,
+        );
+        const seen = new Set<string>();
+        const unique = items.filter((a) => a && !seen.has(a.id) && seen.add(a.id));
+        const own = unique.filter((a) => a.artists.some((x) => x.id === artistId));
+        const feat = unique.filter((a) => !a.artists.some((x) => x.id === artistId));
+
+        if (feat.length > 0 || own.length >= total) {
+          // Die eigenen Alben waren alle auf der ersten Seite → Gesamtzahlen lassen sich ausrechnen
+          const albumTotal = own.length;
+          const appearsTotal = Math.max(feat.length, total - albumTotal);
+          return {
+            album: { group: 'album', items: own.map(toRelease), total: albumTotal, offset: 0, next: null },
+            appears_on: {
+              group: 'appears_on',
+              items: feat.map(toRelease),
+              total: appearsTotal,
+              offset: 0,
+              next: feat.length < appearsTotal ? feat.length : null,
+            },
+          };
+        }
+        // Seite voller eigener Alben → "Erscheint auf" separat holen
+        const appears = await this.getReleases(artistId, 'appears_on', 0, count);
+        const albumTotal = Math.max(own.length, total - appears.total);
+        return {
+          album: {
+            group: 'album',
+            items: own.map(toRelease),
+            total: albumTotal,
+            offset: 0,
+            next: own.length < albumTotal ? own.length : null,
+          },
+          appears_on: appears,
+        };
+      },
+      KV_DAYS(7),
+    );
   }
 
   async getAlbum(id: string): Promise<AlbumDetail> {
@@ -454,7 +533,7 @@ export class SpotifyProvider implements MusicProvider {
         tracks: tracks.filter((t) => t && t.id).map(toTrack),
         url: album.external_urls?.spotify ?? `https://open.spotify.com/album/${album.id}`,
       };
-    }, KV_DAYS(14));
+    }, KV_DAYS(60));
   }
 
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {

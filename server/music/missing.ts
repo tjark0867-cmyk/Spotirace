@@ -21,6 +21,9 @@ export class MissingKeysProvider implements MusicProvider {
   async getReleases(): Promise<ReleasePage> {
     return this.fail();
   }
+  async getInitialSections(): Promise<{ album: ReleasePage; appears_on: ReleasePage }> {
+    return this.fail();
+  }
   async getAlbum(): Promise<AlbumDetail> {
     return this.fail();
   }

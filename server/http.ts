@@ -4,7 +4,6 @@ import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import {
-  INITIAL_GROUPS,
   RELEASE_GROUPS,
   type AppConfig,
   type ArtistPage,
@@ -132,20 +131,20 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
         return sendJson(req, res, 200, await provider.getReleases(id, group, offset, provider.pageCount), 3600);
       }
-      const [artist, ...pages] = await Promise.all([
+      const [artist, initial] = await Promise.all([
         provider.getArtist(id),
-        ...RELEASE_GROUPS.map((group) =>
-          // Singles & Compilations erst laden, wenn jemand sie antippt (spart Spotify-Kontingent)
-          !INITIAL_GROUPS.includes(group)
-            ? Promise.resolve<ReleasePage>({ group, items: [], total: 0, offset: 0, next: 0, lazy: true })
-            : provider.getReleases(id, group, 0, provider.pageCount).catch((err: unknown) => {
-            // Eine Kategorie darf fehlschlagen, ohne die ganze Seite zu blockieren
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn(`[http] Kategorie ${group} für ${id} fehlgeschlagen: ${message}`);
-            return emptyPage(group, message);
-          }),
-        ),
+        // Alben + "Erscheint auf" (Spotify: meist 1 Anfrage für beides)
+        provider.getInitialSections(id).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[http] Diskografie für ${id} fehlgeschlagen: ${message}`);
+          return { album: emptyPage('album', message), appears_on: emptyPage('appears_on', message) };
+        }),
       ]);
+      // Singles & Compilations erst laden, wenn jemand sie antippt (spart Spotify-Kontingent)
+      const lazy = (group: ReleaseGroup): ReleasePage => ({ group, items: [], total: 0, offset: 0, next: 0, lazy: true });
+      const pages: ReleasePage[] = RELEASE_GROUPS.map((group) =>
+        group === 'album' ? initial.album : group === 'appears_on' ? initial.appears_on : lazy(group),
+      );
       const body: ArtistPage = {
         artist,
         sections: Object.fromEntries(pages.map((p) => [p.group, p])) as ArtistPage['sections'],

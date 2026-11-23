@@ -56,6 +56,8 @@ export interface ReleasePage {
 export interface PopularArtist {
   name: string;
   image: string | null;
+  /** Fertiger Spotify-Artist (dann ist beim Antippen keine Anfrage mehr nötig) */
+  artist: ArtistSummary | null;
 }
 
 export interface ArtistPage {

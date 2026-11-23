@@ -190,6 +190,14 @@ export class DemoProvider implements MusicProvider {
     return { group, items, total: all.length, offset, next: end < all.length ? end : null };
   }
 
+  async getInitialSections(artistId: string) {
+    const [album, appears_on] = await Promise.all([
+      this.getReleases(artistId, 'album', 0, this.pageCount),
+      this.getReleases(artistId, 'appears_on', 0, this.pageCount),
+    ]);
+    return { album, appears_on };
+  }
+
   async getAlbum(id: string): Promise<AlbumDetail> {
     await wait(100);
     const r = RELEASE_BY_ID.get(id);
@@ -220,6 +228,7 @@ export class DemoProvider implements MusicProvider {
     return ['nova', 'kaito', 'kompass', 'pia', 'jaylen', 'sora', 'rico', 'mila'].map((id) => ({
       name: ARTISTS[id].name,
       image: `/demo/artist/${id}.svg`,
+      artist: artistSummary(id),
     }));
   }
 

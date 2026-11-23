@@ -12,8 +12,8 @@ Alle starten beim selben Artist. Ihr klickt euch **nur über gemeinsame Songs** 
 - Der Server prüft jeden Klick – Schummeln geht nicht
 - Soundeffekte (Countdown, Sprünge, Sieg …) – direkt im Browser erzeugt, mit Ton-Schalter oben
 - Bekannte Artists stehen in der Suche oben, beim Antippen der Suche gibt es Vorschläge
-- Schnell und sparsam: kleine Cover im Raster, komprimierte Daten, Singles & Compilations erst auf Antippen
-- Dauerhafter Zwischenspeicher (Render Key Value): Geladene Artists und Alben überstehen Einschlafen und Neustarts
+- Schnell und sparsam: kleine Cover im Raster, komprimierte Daten, Alben + „Erscheint auf“ mit einer einzigen Spotify-Anfrage, Singles & Compilations erst auf Antippen, Suche ab 3 Buchstaben (kürzere Namen mit Enter)
+- Dauerhafter Zwischenspeicher (Render Key Value): Geladene Artists und Alben überstehen Einschlafen und Neustarts (Artist-Seiten 7 Tage, Alben 60 Tage)
 - Kontingent-Anzeige in der Lobby: Spotify-Anfragen heute, gemessene Kosten pro Runde und wie viele Runden noch gehen
 - Läuft auch am Handy
 
@@ -96,7 +96,7 @@ npm start
 Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spiel ist darauf ausgelegt:
 
 - Der **Besitzer** der App braucht ein aktives **Premium-Abo**, sonst antwortet Spotify mit Fehler 403. Deine Mitspieler brauchen kein Premium und müssen sich nicht einloggen.
-- Es gibt keine Popularitätswerte mehr. Für die Reihenfolge in der Suche und die Vorschläge fragt der Server deshalb zusätzlich die öffentliche Deezer-API nach Fanzahlen und Charts (ohne Key). Fällt Deezer aus, greift eine Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
+- Es gibt keine Popularitätswerte mehr. Alles, was du siehst (Artists, Bilder, Alben, Vorschläge), kommt zu 100 % von Spotify. Nur für die **Reihenfolge** der Suchtreffer fragt der Server im Hintergrund die öffentliche Deezer-API nach Fanzahlen (ohne Key, kostet kein Spotify-Kontingent). Die Vorschläge stammen aus der Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
 - Jede Kategorie wird einzeln geladen, große Diskografien seitenweise („Mehr laden“). Alle Antworten werden 24 Stunden zwischengespeichert, damit ihr nicht ins Rate-Limit lauft.
 - Falls Spotify für einen Artist bei „Erscheint auf“ nichts liefert, steht dort ein Hinweis – der Rest der Seite funktioniert trotzdem.
 - **Tageskontingent:** Spotify zählt die Anfragen pro Entwickler-Account und sperrt bei Überschreitung bis zu ~24 Stunden. Deshalb lädt das Spiel sparsam: pro Artist-Seite nur Alben und „Erscheint auf“, alles Geladene landet im Zwischenspeicher. Die Lobby zeigt, wie viel heute schon verbraucht ist.

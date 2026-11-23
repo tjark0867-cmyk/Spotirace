@@ -2,7 +2,6 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { GameServer } from './game';
-import { INITIAL_GROUPS } from '../shared/types';
 import { createHttpHandler } from './http';
 import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
@@ -89,7 +88,7 @@ const server = createServer((req, res) => void handler(req, res));
 // Nur die Kategorien, die die Seite sofort zeigt – genau das würde der Browser gleich sowieso laden.
 const warm = (artistId: string) => {
   provider.getArtist(artistId).catch(() => {});
-  for (const group of INITIAL_GROUPS) provider.getReleases(artistId, group, 0, provider.pageCount).catch(() => {});
+  provider.getInitialSections(artistId).catch(() => {});
 };
 
 // WebSocket für Lobby und Spiel

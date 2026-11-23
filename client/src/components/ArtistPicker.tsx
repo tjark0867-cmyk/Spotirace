@@ -51,28 +51,34 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
   };
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Suche mit Verzögerung, damit nicht jeder Tastendruck eine Anfrage auslöst
+  // Sparsame Suche: erst ab 3 Buchstaben und nach einer kurzen Tipp-Pause.
+  // Kurze Namen wie "U2" sucht man mit Enter.
+  const [forced, setForced] = useState<string | null>(null);
+  const q = query.trim();
+  const searchActive = q.length >= 3 || (forced === q && q.length >= 1);
   useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) {
+    if (!searchActive) {
       setResults([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     let cancelled = false;
-    const timer = setTimeout(() => {
-      api
-        .search(q)
-        .then((r) => !cancelled && setResults(r))
-        .catch((e: Error) => !cancelled && toast(e.message, 'error'))
-        .finally(() => !cancelled && setLoading(false));
-    }, 450);
+    const timer = setTimeout(
+      () => {
+        api
+          .search(q)
+          .then((r) => !cancelled && setResults(r))
+          .catch((e: Error) => !cancelled && toast(e.message, 'error'))
+          .finally(() => !cancelled && setLoading(false));
+      },
+      forced === q ? 0 : 650,
+    );
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, toast]);
+  }, [q, searchActive, forced, toast]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -172,12 +178,20 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
               }}
               onPointerDown={loadPopular}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && results[0]) pick(results[0]);
+                if (e.key === 'Enter') {
+                  if (results[0] && !loading) pick(results[0]);
+                  else if (q.length >= 1) setForced(q);
+                }
                 if (e.key === 'Escape') setOpen(false);
               }}
             />
           </div>
-          {open && query.trim().length < 2 && popular && popular.length > 0 && (
+          {open && !searchActive && q.length > 0 && (
+            <div className="absolute left-0 right-0 top-full z-30 mt-2 rounded-md bg-sp-elevated px-3 py-3 text-sm text-sp-sub shadow-[0_16px_24px_rgba(0,0,0,.5)]">
+              Weiter tippen … oder <b className="text-white">Enter</b> drücken, um nach „{q}“ zu suchen
+            </div>
+          )}
+          {open && q.length === 0 && popular && popular.length > 0 && (
             <div className="sp-scroll absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-md bg-sp-elevated p-1 shadow-[0_16px_24px_rgba(0,0,0,.5)]">
               <div className="px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-widest text-sp-sub">Beliebte Artists</div>
               {popular
@@ -190,7 +204,7 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
                     onClick={async () => {
                       setResolving(a.name);
                       try {
-                        pick(await api.resolve(a.name));
+                        pick(a.artist ?? (await api.resolve(a.name)));
                       } catch (e) {
                         toast((e as Error).message, 'error');
                       } finally {
@@ -201,16 +215,18 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
                       resolving === a.name ? 'animate-pulse' : ''
                     }`}
                   >
-                    <ArtistImage artist={{ id: a.name, name: a.name, image: a.image }} size={44} />
+                    <ArtistImage artist={a.artist ?? { id: a.name, name: a.name, image: a.image }} size={44} />
                     <div className="min-w-0">
                       <div className="truncate font-semibold">{a.name}</div>
-                      <div className="truncate text-xs text-sp-sub">{resolving === a.name ? 'Wird geladen …' : 'Künstler:in'}</div>
+                      <div className="truncate text-xs text-sp-sub">
+                        {resolving === a.name ? 'Wird geladen …' : `Künstler:in${a.artist?.genres[0] ? ` · ${a.artist.genres[0]}` : ''}`}
+                      </div>
                     </div>
                   </button>
                 ))}
             </div>
           )}
-          {open && query.trim().length >= 2 && (
+          {open && searchActive && (
             <div className="sp-scroll absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-md bg-sp-elevated p-1 shadow-[0_16px_24px_rgba(0,0,0,.5)]">
               {loading && results.length === 0 && <div className="px-3 py-3 text-sm text-sp-sub">Suche …</div>}
               {!loading && results.length === 0 && <div className="px-3 py-3 text-sm text-sp-sub">Keine Artists gefunden</div>}

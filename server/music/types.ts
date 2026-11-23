@@ -16,6 +16,8 @@ export interface MusicProvider {
   readonly name: string;
   searchArtists(query: string): Promise<ArtistSummary[]>;
   getArtist(id: string): Promise<ArtistSummary>;
+  /** Die Kategorien, die eine Artist-Seite sofort zeigt (Alben + Erscheint auf) – möglichst mit 1 Anfrage */
+  getInitialSections(artistId: string): Promise<{ album: ReleasePage; appears_on: ReleasePage }>;
   /** Liefert ab `offset` bis zu `count` Releases einer Kategorie */
   getReleases(artistId: string, group: ReleaseGroup, offset: number, count: number): Promise<ReleasePage>;
   getAlbum(id: string): Promise<AlbumDetail>;
