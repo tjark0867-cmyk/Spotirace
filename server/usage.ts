@@ -11,6 +11,11 @@ const DAY_TTL = 3 * 24 * 3600;
 const K_LIMIT = 'sr:usage:lastLimit';
 const K_ROUND = 'sr:usage:perPlayerRound';
 const K_COOLDOWN = 'sr:spotify:cooldownUntil';
+/**
+ * Unter diesem Stand ist ein "Kontingent aufgebraucht" kein echtes Limit, sondern
+ * eine noch laufende Sperre von vorher (z. B. nach einem Neustart) – nicht als Limit merken.
+ */
+const MIN_PLAUSIBLE_LIMIT = 100;
 
 function berlinDay(d = new Date()): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(d); // JJJJ-MM-TT
@@ -43,7 +48,10 @@ export class UsageCounter {
       ]);
       // Anfragen, die schon vor dem Laden gezählt wurden, kommen dazu
       this.local += Number(today?.toString() ?? 0) || 0;
-      if (limit) this.lastLimit = JSON.parse(limit.toString());
+      if (limit) {
+        const parsed = JSON.parse(limit.toString()) as { count: number; at: number };
+        if (parsed.count >= MIN_PLAUSIBLE_LIMIT) this.lastLimit = parsed;
+      }
       if (round) this.perPlayerRound = Number(round.toString()) || null;
     } catch {
       /* ohne Speicher zählen wir eben ab jetzt */
@@ -86,6 +94,10 @@ export class UsageCounter {
   /** Spotify hat "Kontingent aufgebraucht" gemeldet */
   limitHit() {
     this.rollDay();
+    if (this.local < MIN_PLAUSIBLE_LIMIT) {
+      console.warn(`[usage] Spotify-Sperre bei erst ${this.local} Anfragen – stammt von vorher, wird nicht als Limit gemerkt`);
+      return;
+    }
     this.lastLimit = { count: this.local, at: Date.now() };
     this.kv?.set(K_LIMIT, JSON.stringify(this.lastLimit), 60 * 24 * 3600).catch(() => {});
   }
