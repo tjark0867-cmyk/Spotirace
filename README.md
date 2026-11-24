@@ -122,7 +122,11 @@ Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spi
 - Es gibt keine Popularitätswerte mehr. Alles, was du siehst (Artists, Bilder, Alben, Vorschläge), kommt zu 100 % von Spotify. Nur für die **Reihenfolge** der Suchtreffer fragt der Server im Hintergrund die öffentliche Deezer-API nach Fanzahlen (ohne Key, kostet kein Spotify-Kontingent). Die Vorschläge stammen aus der Liste bekannter Artists in `server/music/randomArtists.ts` – die kannst du beliebig anpassen.
 - Jede Kategorie wird einzeln geladen, große Diskografien seitenweise („Mehr laden“). Alle Antworten werden 24 Stunden zwischengespeichert, damit ihr nicht ins Rate-Limit lauft.
 - Falls Spotify für einen Artist bei „Erscheint auf“ nichts liefert, steht dort ein Hinweis – der Rest der Seite funktioniert trotzdem.
-- **Tageskontingent:** Spotify zählt die Anfragen pro Entwickler-Account und sperrt bei Überschreitung bis zu ~24 Stunden. Deshalb lädt das Spiel sparsam: pro Artist-Seite nur Alben und „Erscheint auf“, alles Geladene landet im Zwischenspeicher. Die Lobby zeigt, wie viel heute schon verbraucht ist.
+- **Kontingent:** Spotify zählt die Anfragen pro Entwickler-Account über ein rollendes 24-Stunden-Fenster und sperrt bei Überschreitung bis zu ~24 Stunden (gemessen: Schluss bei rund 260–300 Anfragen). Deshalb lädt das Spiel sparsam:
+  - Name und Bild eines Artists kommen über Spotifys **oEmbed**-Schnittstelle – die zählt nicht zum Kontingent.
+  - Pro Artist-Seite kostet nur die Liste „Alben + Erscheint auf“ eine Anfrage, jedes geöffnete Album eine weitere.
+  - Alles Geladene bleibt lange im Zwischenspeicher (Alben 180 Tage, Diskografien 21 Tage) – schon gespielte Wege kosten nichts mehr.
+  - Die Lobby zeigt den Verbrauch der letzten 24 Stunden und wie viele Runden ungefähr noch gehen.
 - Der kostenlose Key-Value-Speicher hält seine Daten nur im Arbeitsspeicher. Startet Render ihn neu, ist der Zwischenspeicher leer – das Spiel lädt die Daten dann einfach neu.
 
 ## 6. Probleme?

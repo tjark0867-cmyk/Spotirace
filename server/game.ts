@@ -651,7 +651,7 @@ export class GameServer {
     room.startAt = now + this.countdownMs;
     room.endsAt = room.settings.timeLimitMin > 0 ? room.startAt + room.settings.timeLimitMin * 60_000 : null;
     room.endedAt = null;
-    room.usageAtStart = this.usage ? this.usage.today : null;
+    room.usageAtStart = this.usage ? this.usage.total : null;
     room.peekCache = new Map();
 
     for (const p of room.players) {
@@ -906,9 +906,8 @@ export class GameServer {
     for (const p of room.players) if (p.status === 'playing') p.status = 'timeout';
     for (const t of room.teams ?? []) if (t.status === 'playing') t.status = 'timeout';
     if (this.usage && room.usageAtStart !== null) {
-      const used = this.usage.today - room.usageAtStart;
+      const used = this.usage.total - room.usageAtStart;
       const players = room.players.filter((p) => p.status !== 'idle').length;
-      // Tageswechsel mitten in der Runde → Messung verwerfen
       if (used >= 0) this.usage.recordRound(used, players);
       console.log(`[game] Lobby ${room.code}: Runde ${room.round} beendet – ${used} Spotify-Anfragen für ${players} Spieler`);
     } else {

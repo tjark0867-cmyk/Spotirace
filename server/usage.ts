@@ -2,12 +2,14 @@ import type { UsageInfo } from '../shared/types';
 import type { KvClient } from './kv';
 
 /**
- * Zählt, wie viele Anfragen heute an Spotify gegangen sind, merkt sich, bei welchem
- * Stand Spotify zuletzt "Kontingent aufgebraucht" gemeldet hat, und misst, was eine
- * Runde pro Spieler im Schnitt kostet. Mit Key-Value-Speicher übersteht alles Neustarts.
+ * Zählt die Anfragen an Spotify in den letzten 24 Stunden (stündliche Fächer – Spotify
+ * zählt über ein rollendes Fenster, nicht ab Mitternacht), merkt sich, bei welchem Stand
+ * Spotify zuletzt "Kontingent aufgebraucht" gemeldet hat, und misst, was eine Runde pro
+ * Spieler im Schnitt kostet. Mit Key-Value-Speicher übersteht alles Neustarts.
  */
 
-const DAY_TTL = 3 * 24 * 3600;
+const HOUR_MS = 3600_000;
+const BUCKET_TTL = 26 * 3600;
 const K_LIMIT = 'sr:usage:lastLimit';
 const K_ROUND = 'sr:usage:perPlayerRound';
 const K_COOLDOWN = 'sr:spotify:cooldownUntil';
@@ -17,17 +19,18 @@ const K_COOLDOWN = 'sr:spotify:cooldownUntil';
  */
 const MIN_PLAUSIBLE_LIMIT = 100;
 
-function berlinDay(d = new Date()): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(d); // JJJJ-MM-TT
-}
+const hourNow = () => Math.floor(Date.now() / HOUR_MS);
+const bucketKey = (h: number) => `sr:usage:h:${h}`;
 
 export class UsageCounter {
-  private day = berlinDay();
-  private local = 0; // Stand heute (inkl. noch nicht gespeicherter Anfragen)
-  private pending = 0;
+  /** Stunde → Anzahl Anfragen */
+  private buckets = new Map<number, number>();
+  private pending = new Map<number, number>();
   private flushTimer: NodeJS.Timeout | null = null;
   private lastLimit: { count: number; at: number } | null = null;
   private perPlayerRound: number | null = null;
+  /** Wächst nur – für die Messung einer Runde */
+  private sinceStart = 0;
   private loaded: Promise<void>;
 
   constructor(private kv: KvClient | null) {
@@ -41,13 +44,30 @@ export class UsageCounter {
   private async load() {
     if (!this.kv) return;
     try {
-      const [today, limit, round] = await Promise.all([
-        this.kv.get(`sr:usage:${this.day}`),
+      const now = hourNow();
+      const hours = Array.from({ length: 24 }, (_, i) => now - i);
+      const [limit, round, ...counts] = await Promise.all([
         this.kv.get(K_LIMIT),
         this.kv.get(K_ROUND),
+        ...hours.map((h) => this.kv!.get(bucketKey(h))),
       ]);
       // Anfragen, die schon vor dem Laden gezählt wurden, kommen dazu
-      this.local += Number(today?.toString() ?? 0) || 0;
+      let found = 0;
+      hours.forEach((h, i) => {
+        const n = Number(counts[i]?.toString() ?? 0) || 0;
+        found += n;
+        if (n > 0) this.buckets.set(h, (this.buckets.get(h) ?? 0) + n);
+      });
+      // Umstieg vom alten Tageszähler: dessen Stand einmalig übernehmen (liegt sicher in den letzten 24 h)
+      if (found === 0) {
+        const day = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
+        const old = Number((await this.kv.get(`sr:usage:${day}`))?.toString() ?? 0) || 0;
+        if (old > 0) {
+          const h = now - 1;
+          this.buckets.set(h, (this.buckets.get(h) ?? 0) + old);
+          await this.kv.incrBy(bucketKey(h), old, BUCKET_TTL);
+        }
+      }
       if (limit) {
         const parsed = JSON.parse(limit.toString()) as { count: number; at: number };
         if (parsed.count >= MIN_PLAUSIBLE_LIMIT) this.lastLimit = parsed;
@@ -58,21 +78,24 @@ export class UsageCounter {
     }
   }
 
-  private rollDay() {
-    const d = berlinDay();
-    if (d !== this.day) {
-      this.day = d;
-      this.local = 0;
-      this.pending = 0;
+  /** Anfragen in den letzten 24 Stunden */
+  private get last24(): number {
+    const oldest = hourNow() - 23;
+    let sum = 0;
+    for (const [h, n] of this.buckets) {
+      if (h >= oldest) sum += n;
+      else this.buckets.delete(h);
     }
+    return sum;
   }
 
   /** Eine Anfrage an Spotify ist rausgegangen */
   count(n = 1) {
-    this.rollDay();
-    this.local += n;
+    const h = hourNow();
+    this.buckets.set(h, (this.buckets.get(h) ?? 0) + n);
+    this.sinceStart += n;
     if (!this.kv) return;
-    this.pending += n;
+    this.pending.set(h, (this.pending.get(h) ?? 0) + n);
     // Gesammelt alle 2 Sekunden speichern statt bei jeder Anfrage
     if (!this.flushTimer) this.flushTimer = setTimeout(() => void this.flush(), 2000);
   }
@@ -81,31 +104,32 @@ export class UsageCounter {
   async flush() {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
-    const n = this.pending;
-    if (!this.kv || n === 0) return;
-    this.pending = 0;
-    try {
-      await this.kv.incrBy(`sr:usage:${this.day}`, n, DAY_TTL);
-    } catch {
-      this.pending += n;
+    if (!this.kv || this.pending.size === 0) return;
+    const batch = [...this.pending];
+    this.pending.clear();
+    for (const [h, n] of batch) {
+      try {
+        await this.kv.incrBy(bucketKey(h), n, BUCKET_TTL);
+      } catch {
+        this.pending.set(h, (this.pending.get(h) ?? 0) + n);
+      }
     }
   }
 
   /** Spotify hat "Kontingent aufgebraucht" gemeldet */
   limitHit() {
-    this.rollDay();
-    if (this.local < MIN_PLAUSIBLE_LIMIT) {
-      console.warn(`[usage] Spotify-Sperre bei erst ${this.local} Anfragen – stammt von vorher, wird nicht als Limit gemerkt`);
+    const used = this.last24;
+    if (used < MIN_PLAUSIBLE_LIMIT) {
+      console.warn(`[usage] Spotify-Sperre bei erst ${used} Anfragen – stammt von vorher, wird nicht als Limit gemerkt`);
       return;
     }
-    this.lastLimit = { count: this.local, at: Date.now() };
+    this.lastLimit = { count: used, at: Date.now() };
     this.kv?.set(K_LIMIT, JSON.stringify(this.lastLimit), 60 * 24 * 3600).catch(() => {});
   }
 
-  /** Aktueller Zählerstand (für Rundenmessung) */
-  get today(): number {
-    this.rollDay();
-    return this.local;
+  /** Zählerstand für die Rundenmessung (wächst nur) */
+  get total(): number {
+    return this.sinceStart;
   }
 
   /** Nach jeder Runde: Kosten pro Spieler als gleitender Mittelwert */
@@ -131,9 +155,8 @@ export class UsageCounter {
 
   async info(): Promise<UsageInfo> {
     await this.loaded;
-    this.rollDay();
     return {
-      today: this.local,
+      today: this.last24,
       lastLimit: this.lastLimit,
       perPlayerRound: this.perPlayerRound === null ? null : Math.round(this.perPlayerRound),
       persistent: this.persistent,

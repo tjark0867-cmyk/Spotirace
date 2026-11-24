@@ -14,7 +14,7 @@ export function UsageCard({ usage, players, cooldownSeconds }: { usage: UsageInf
   return (
     <div className="rounded-lg bg-sp-card p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-xs font-bold uppercase tracking-widest text-sp-sub">Spotify-Kontingent heute</div>
+        <div className="text-xs font-bold uppercase tracking-widest text-sp-sub">Spotify-Kontingent · 24 Std.</div>
         <div className="shrink-0 whitespace-nowrap text-sm font-bold tabular-nums">{fmt(usage.today)} Anfragen</div>
       </div>
 
@@ -32,7 +32,7 @@ export function UsageCard({ usage, players, cooldownSeconds }: { usage: UsageInf
           <p className="font-semibold text-[#ffc864]">Spotify macht gerade Pause – das Kontingent ist aufgebraucht.</p>
         ) : rounds !== null ? (
           <p>
-            Heute gehen noch ungefähr <b className="text-white">{rounds === 0 ? 'keine' : rounds} {rounds === 1 ? 'Runde' : 'Runden'}</b> mit {players}{' '}
+            Gerade gehen noch ungefähr <b className="text-white">{rounds === 0 ? 'keine' : rounds} {rounds === 1 ? 'Runde' : 'Runden'}</b> mit {players}{' '}
             {players === 1 ? 'Spieler' : 'Spielern'}.
           </p>
         ) : null}

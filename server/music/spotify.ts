@@ -50,6 +50,38 @@ interface SpAlbumFull extends SpAlbumSimple { tracks: SpPaging<SpTrackSimple> }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const OEMBED_URL = process.env.SPOTIFY_OEMBED_URL || 'https://open.spotify.com/oembed';
+
+/**
+ * Name und Bild eines Artists über Spotifys oEmbed-Schnittstelle. Die gehört nicht zur
+ * Web API und zählt deshalb NICHT zum Development-Mode-Kontingent.
+ * Spotify liefert dort das 320-px-Bild; die 640-px-Version hat dieselbe Bild-ID mit anderem Präfix.
+ */
+async function oembedArtist(id: string): Promise<ArtistSummary | null> {
+  const page = `https://open.spotify.com/artist/${encodeURIComponent(id)}`;
+  try {
+    const res = await fetch(`${OEMBED_URL}?url=${encodeURIComponent(page)}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { title?: string; thumbnail_url?: string };
+    if (!json.title) return null;
+    const thumb = json.thumbnail_url ?? null;
+    const hash = thumb?.match(/ab67616100005174([0-9a-f]{24})$/)?.[1];
+    return {
+      id,
+      name: json.title,
+      image: hash ? `https://i.scdn.co/image/ab6761610000e5eb${hash}` : thumb,
+      imageSmall: hash ? `https://i.scdn.co/image/ab67616100005174${hash}` : thumb,
+      genres: [],
+      url: page,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Größtes Bild nehmen → volle Cover-Auflösung */
 function largestImage(images: SpImage[] | undefined): string | null {
   if (!images || images.length === 0) return null;
@@ -229,7 +261,7 @@ export class SpotifyProvider implements MusicProvider {
     return new ProviderError(
       503,
       this.quotaExceeded
-        ? `Das Spotify-Kontingent ist für heute aufgebraucht. Spotify gibt es in ca. ${wait} wieder frei.`
+        ? `Das Spotify-Kontingent ist aufgebraucht. Spotify gibt es in ca. ${wait} wieder frei.`
         : `Spotify bremst gerade (zu viele Anfragen). Bitte in ${wait} nochmal versuchen.`,
     );
   }
@@ -419,12 +451,13 @@ export class SpotifyProvider implements MusicProvider {
     return hit;
   }
 
+  /** Artist-Name und -Bild: zuerst über oEmbed (kostenlos), nur im Notfall über die Web API */
   async getArtist(id: string): Promise<ArtistSummary> {
     return this.cache.wrap(
       `artist:${id}`,
       DAY,
-      async () => toArtist(await this.request<SpArtist>(`/artists/${encodeURIComponent(id)}`)),
-      KV_DAYS(7),
+      async () => (await oembedArtist(id)) ?? toArtist(await this.request<SpArtist>(`/artists/${encodeURIComponent(id)}`)),
+      KV_DAYS(30),
     );
   }
 
@@ -449,7 +482,7 @@ export class SpotifyProvider implements MusicProvider {
         offset,
         next: covered < total ? covered : null,
       };
-    }, KV_DAYS(7));
+    }, KV_DAYS(21));
   }
 
   /**
@@ -505,7 +538,7 @@ export class SpotifyProvider implements MusicProvider {
           appears_on: appears,
         };
       },
-      KV_DAYS(7),
+      KV_DAYS(21),
     );
   }
 
@@ -533,7 +566,7 @@ export class SpotifyProvider implements MusicProvider {
         tracks: tracks.filter((t) => t && t.id).map(toTrack),
         url: album.external_urls?.spotify ?? `https://open.spotify.com/album/${album.id}`,
       };
-    }, KV_DAYS(60));
+    }, KV_DAYS(180));
   }
 
   async randomArtist(excludeIds: string[]): Promise<ArtistSummary> {

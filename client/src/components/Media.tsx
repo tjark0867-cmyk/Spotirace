@@ -15,11 +15,13 @@ export function ArtistImage({
   size: number;
   className?: string;
 }) {
-  // Kleine Avatare laden das kleinere Bild → viel weniger Daten
-  const src = size <= 160 ? (artist.imageSmall ?? artist.image) : artist.image;
+  // Kleine Avatare laden das kleinere Bild; klappt ein Bild nicht, wird das andere probiert
+  const primary = size <= 160 ? (artist.imageSmall ?? artist.image) : (artist.image ?? artist.imageSmall ?? null);
+  const backup = size <= 160 ? artist.image : (artist.imageSmall ?? null);
   const inked = useInked();
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const failed = failedSrc !== null && failedSrc === src;
+  const [failedList, setFailedList] = useState<string[]>([]);
+  const src = [primary, backup].find((u): u is string => !!u && !failedList.includes(u)) ?? null;
+  const failed = src === null;
   const initials = artist.name
     .split(/\s+/)
     .filter(Boolean)
@@ -39,7 +41,7 @@ export function ArtistImage({
           loading={size >= 200 ? 'eager' : 'lazy'}
           decoding="async"
           draggable={false}
-          onError={() => setFailedSrc(src)}
+          onError={() => setFailedList((list) => [...list, src])}
         />
       ) : (
         <span className="absolute inset-0 grid place-items-center font-bold text-white/90" style={{ fontSize: size * 0.36 }}>
