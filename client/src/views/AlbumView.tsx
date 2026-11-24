@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import type { AlbumDetail, ArtistSummary, TrackInfo } from '../../../shared/types';
-import { ArrowRightIcon, ClockIcon, ExternalIcon, LockIcon } from '../components/Icons';
+import { ArrowRightIcon, ClockIcon, ExternalIcon, FlagIcon, LockIcon } from '../components/Icons';
 import { Cover } from '../components/Media';
 import { api } from '../lib/api';
 import { useDominantColor } from '../lib/color';
@@ -32,21 +32,31 @@ function TrackRow({
   album,
   current,
   canMove,
+  targetId,
 }: {
   track: TrackInfo;
   album: AlbumDetail;
   current: ArtistSummary;
   canMove: boolean;
+  targetId: string | null;
 }) {
   const { move, pendingMove } = useGame();
   const playable = track.artists.some((a) => a.id === current.id);
   const jumpable = playable && track.artists.some((a) => a.id !== current.id);
+  const hasTarget = !!targetId && track.artists.some((a) => a.id === targetId);
+
+  const rowStyle = hasTarget
+    ? playable
+      ? 'bg-gradient-to-r from-[#f573a0]/25 via-[#f573a0]/10 to-transparent ring-1 ring-[#f573a0]/60 hover:from-[#f573a0]/35'
+      : 'opacity-75 ring-1 ring-[#f573a0]/30'
+    : playable
+      ? 'hover:bg-white/[0.08]'
+      : 'opacity-40';
 
   return (
     <div
-      className={`group grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-4 rounded-md px-3 py-2 sm:px-4 ${
-        playable ? 'hover:bg-white/[0.08]' : 'opacity-40'
-      }`}
+      id={`track-${track.id}`}
+      className={`group grid scroll-mt-24 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-4 rounded-md px-3 py-2 transition sm:px-4 ${rowStyle}`}
       title={playable ? undefined : `${current.name} ist auf diesem Song nicht dabei`}
       onClick={playable ? undefined : () => sound.play('denied')}
     >
@@ -62,10 +72,31 @@ function TrackRow({
           {track.artists.map((a, i) => {
             const isCurrent = a.id === current.id;
             const clickable = playable && !isCurrent && canMove;
+            const isTarget = a.id === targetId;
             const sep = i < track.artists.length - 1 ? ', ' : '';
             return (
               <Fragment key={`${a.id}-${i}`}>
-                {clickable ? (
+                {isTarget && clickable ? (
+                  // Das Ziel: nicht zu übersehen
+                  <button
+                    type="button"
+                    disabled={!!pendingMove}
+                    onClick={() => move(album.id, track.id, a.id)}
+                    className={`my-0.5 inline-flex animate-target-glow items-center gap-1.5 rounded-full bg-[#f573a0] px-2.5 py-0.5 align-middle font-extrabold text-black transition hover:scale-105 hover:bg-[#ff8fb6] disabled:cursor-wait ${
+                      pendingMove === a.id ? 'animate-pulse' : ''
+                    }`}
+                    title={`Zum Ziel ${a.name} springen`}
+                  >
+                    <FlagIcon size={13} />
+                    {a.name}
+                    <span className="rounded-full bg-black/15 px-1.5 text-[10px] font-black uppercase tracking-wide">Ziel</span>
+                  </button>
+                ) : isTarget ? (
+                  <span className="my-0.5 inline-flex items-center gap-1 rounded-full border border-[#f573a0] px-2 align-middle font-bold text-[#f573a0]">
+                    <FlagIcon size={12} />
+                    {a.name}
+                  </span>
+                ) : clickable ? (
                   <button
                     type="button"
                     disabled={!!pendingMove}
@@ -88,10 +119,16 @@ function TrackRow({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        {jumpable && (
-          <span className="hidden rounded-full bg-sp-green/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-sp-green-bright sm:inline">
-            Feature
+        {hasTarget ? (
+          <span className="hidden items-center gap-1 rounded-full bg-[#f573a0]/20 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-[#f573a0] sm:inline-flex">
+            <FlagIcon size={11} /> Ziel
           </span>
+        ) : (
+          jumpable && (
+            <span className="hidden rounded-full bg-sp-green/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-sp-green-bright sm:inline">
+              Feature
+            </span>
+          )
         )}
         <span className="w-10 text-right text-sm tabular-nums text-sp-sub">{formatTrackDuration(track.durationMs)}</span>
       </div>
@@ -102,12 +139,14 @@ function TrackRow({
 export function AlbumView({
   albumId,
   current,
+  target,
   canMove,
   demo,
   onLoaded,
 }: {
   albumId: string;
   current: ArtistSummary;
+  target: ArtistSummary | null;
   canMove: boolean;
   demo: boolean;
   onLoaded?: (album: AlbumDetail) => void;
@@ -118,6 +157,13 @@ export function AlbumView({
   useEffect(() => {
     if (data) onLoaded?.(data);
   }, [data, onLoaded]);
+
+  // Funkeln, wenn das Ziel in diesem Album direkt erreichbar ist
+  const canWinHere =
+    !!data && !!target && canMove && data.tracks.some((t) => t.artists.some((a) => a.id === target.id) && t.artists.some((a) => a.id === current.id));
+  useEffect(() => {
+    if (canWinHere) sound.play('found');
+  }, [canWinHere]);
 
   if (error) {
     return (
@@ -132,6 +178,17 @@ export function AlbumView({
   }
 
   const isOwn = !!data?.artists.some((a) => a.id === current.id);
+  const targetId = target?.id ?? null;
+  const targetTracks = data && targetId ? data.tracks.filter((t) => t.artists.some((a) => a.id === targetId)) : [];
+  const reachable = targetTracks.filter((t) => t.artists.some((a) => a.id === current.id));
+  const scrollToTrack = (trackId: string) => {
+    const el = document.getElementById(`track-${trackId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.animate(
+      [{ backgroundColor: 'rgba(245,115,160,.55)' }, { backgroundColor: 'rgba(245,115,160,0)' }],
+      { duration: 1400, easing: 'ease-out' },
+    );
+  };
   const playableCount = data ? data.tracks.filter((t) => t.artists.some((a) => a.id === current.id)).length : 0;
   const totalMs = data ? data.tracks.reduce((s, t) => s + t.durationMs, 0) : 0;
   const discs = data ? Array.from(new Set(data.tracks.map((t) => t.disc))) : [];
@@ -160,7 +217,14 @@ export function AlbumView({
             )}
             {data && (
               <div className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-white/80 sm:justify-start">
-                <span className="font-bold text-white">{data.artists.map((a) => a.name).join(', ')}</span>
+                <span className="font-bold text-white">
+                  {data.artists.map((a, i) => (
+                    <Fragment key={a.id}>
+                      {i > 0 && ', '}
+                      <span className={a.id === targetId ? 'rounded-full bg-[#f573a0] px-2 text-black' : ''}>{a.name}</span>
+                    </Fragment>
+                  ))}
+                </span>
                 {data.year && <span>• {data.year}</span>}
                 <span>• {plural(data.tracks.length, 'Song', 'Songs')},</span>
                 <span className="text-white/60">{formatAlbumLength(totalMs)}</span>
@@ -171,6 +235,42 @@ export function AlbumView({
       </header>
 
       <div className="px-2 pb-10 sm:px-5" style={{ background: `linear-gradient(to bottom, color-mix(in srgb, ${color} 38%, transparent) 0, transparent 240px)` }}>
+        {data && target && targetTracks.length > 0 && (
+          <div className="px-2 pt-6 sm:px-3">
+            {reachable.length > 0 && canMove ? (
+              <div className="flex animate-fade-up flex-col gap-3 rounded-lg bg-gradient-to-r from-[#f573a0] to-[#c2408a] p-4 text-black shadow-[0_8px_30px_rgba(245,115,160,.35)] sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/15">
+                    <FlagIcon size={20} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-lg font-black leading-tight">Ziel gefunden!</div>
+                    <div className="text-sm font-semibold">
+                      {target.name} ist auf „{reachable[0].name}“. Tippe auf den pinken Namen, um zu gewinnen.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => scrollToTrack(reachable[0].id)}
+                  className="shrink-0 rounded-full bg-black px-5 py-2 text-sm font-bold text-white transition hover:scale-105"
+                >
+                  Zum Song ↓
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-lg border border-[#f573a0]/40 bg-[#f573a0]/10 p-4">
+                <FlagIcon size={18} className="mt-0.5 shrink-0 text-[#f573a0]" />
+                <p className="text-sm text-white/90">
+                  <b className="text-[#f573a0]">{target.name}</b> ist auf diesem Album
+                  {targetTracks.length === 1 ? ` („${targetTracks[0].name}“)` : ''} – aber nicht auf einem Song mit{' '}
+                  <b>{current.name}</b>. Spring über einen anderen Artist von hier weiter.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {data && (
           <div className="px-2 pb-2 pt-6 sm:px-3">
             {isOwn ? (
@@ -215,7 +315,7 @@ export function AlbumView({
                 {data.tracks
                   .filter((t) => t.disc === disc)
                   .map((t) => (
-                    <TrackRow key={t.id} track={t} album={data} current={current} canMove={canMove} />
+                    <TrackRow key={t.id} track={t} album={data} current={current} canMove={canMove} targetId={targetId} />
                   ))}
               </Fragment>
             ))}

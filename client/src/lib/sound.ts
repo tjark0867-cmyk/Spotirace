@@ -23,7 +23,8 @@ export type SoundName =
   | 'win'
   | 'lose'
   | 'tick'
-  | 'results';
+  | 'results'
+  | 'found';
 
 const STORAGE_KEY = 'spotirace.sound';
 const midi = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -351,6 +352,11 @@ export class SoundEngine {
         break;
       case 'tick':
         this.mallet(t, 88, 0.11, 0.12);
+        break;
+      case 'found':
+        // Funkeln: Ziel ist im geöffneten Album
+        [84, 88, 91, 96].forEach((m, i) => this.bell(t + i * 0.07, m, 0.075, (i - 1.5) * 0.2));
+        this.whoosh(t, 0.5, 3000, 8000, 0.025, 0.6);
         break;
       case 'results':
         this.whoosh(t, 0.7, 200, 1400, 0.045, 0.7);

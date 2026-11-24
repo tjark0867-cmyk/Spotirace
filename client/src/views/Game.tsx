@@ -342,6 +342,7 @@ export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
             <ArtistView
               key={current.id}
               artistId={current.id}
+              targetId={state.target?.id ?? null}
               isFirst={state.yourPath.length === 1}
               onOpenAlbum={openAlbum}
               demo={demo}
@@ -349,7 +350,15 @@ export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
           </div>
           {view.kind === 'album' && (
             <div className="-mt-[56px]">
-              <AlbumView key={view.albumId} albumId={view.albumId} current={current} canMove={active} demo={demo} onLoaded={onAlbumLoaded} />
+              <AlbumView
+                key={view.albumId}
+                albumId={view.albumId}
+                current={current}
+                target={state.target}
+                canMove={active}
+                demo={demo}
+                onLoaded={onAlbumLoaded}
+              />
             </div>
           )}
         </>
