@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronRightIcon, ClockIcon, CrownIcon, ExitIcon, FlagIcon, MouseClickIcon, PlayIcon } from '../components/Icons';
 import { ArtistImage, PlayerAvatar } from '../components/Media';
 import { Medal, MetalNumeral } from '../components/Medal';
-import { Crown, Throne } from '../components/Trophy';
+import { Crown } from '../components/Trophy';
 import { sound } from '../lib/sound';
 import { PathChain } from '../components/PathChain';
 import { formatClock } from '../lib/format';
@@ -95,23 +95,19 @@ function Podium({ top, meId }: { top: PlayerPublic[]; meId: string | undefined }
         )}
       </div>
 
-      {/* Platz 1 auf dem Thron */}
+      {/* Platz 1 mit Krone */}
       <div className="flex min-w-0 flex-[1.3] flex-col items-center">
-        <div className="relative flex justify-center animate-fade-up" style={{ animationDelay: `${PODIUM[1].delay + 0.35}s` }}>
-          <Throne width={150} />
-          <div className="absolute left-1/2 top-[48px] -translate-x-1/2">
-            <div className="rounded-full p-[3px] shadow-[0_0_24px_rgba(255,205,70,.65)]" style={{ background: 'linear-gradient(135deg,#fff1a8,#e8a20c,#7a4f06,#ffd23f)' }}>
-              <PlayerAvatar name={first.name} color={first.color} size={62} />
-            </div>
+        <div className="relative mb-2 flex flex-col items-center px-6 pt-9 animate-fade-up" style={{ animationDelay: `${PODIUM[1].delay + 0.35}s` }}>
+          <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 animate-float">
+            <Crown width={52} />
           </div>
-          {/* Krone auf dem Kopf des Siegers */}
-          <div className="absolute left-1/2 top-[14px] z-10 -translate-x-1/2 animate-float">
-            <Crown width={48} />
+          <div className="rounded-full p-[3px] shadow-[0_0_28px_rgba(255,205,70,.7)]" style={{ background: 'linear-gradient(135deg,#fff1a8,#e8a20c,#7a4f06,#ffd23f)' }}>
+            <PlayerAvatar name={first.name} color={first.color} size={70} />
           </div>
-          <Sparkle className="left-1 top-8 h-4 w-4" delay="0s" />
-          <Sparkle className="right-2 top-16 h-3 w-3" delay="0.7s" />
-          <Sparkle className="left-6 top-28 h-2.5 w-2.5" delay="1.3s" />
-          <Sparkle className="right-5 top-2 h-3.5 w-3.5" delay="1.9s" />
+          <Sparkle className="left-0 top-10 h-4 w-4" delay="0s" />
+          <Sparkle className="right-0 top-16 h-3 w-3" delay="0.7s" />
+          <Sparkle className="left-3 top-24 h-2.5 w-2.5" delay="1.3s" />
+          <Sparkle className="right-2 top-4 h-3.5 w-3.5" delay="1.9s" />
         </div>
         <PodiumBlock place={1} p={first} meId={meId} />
       </div>
