@@ -22,6 +22,8 @@
   --animate-shimmer: shimmer 1.4s linear infinite;
   --animate-confetti: confetti 2.8s ease-in forwards;
   --animate-rise: rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-eq: eq 1.1s ease-in-out infinite;
+  --animate-drift: drift 60s linear infinite;
   --animate-target-glow: target-glow 1.6s ease-in-out infinite;
 
   @keyframes pop {
@@ -37,6 +39,14 @@
     from { background-position: -400px 0; }
     to { background-position: 400px 0; }
   }
+  @keyframes eq {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(0.45); }
+  }
+  @keyframes drift {
+    from { transform: translate3d(0, 0, 0) rotate(-12deg); }
+    to { transform: translate3d(-50%, 0, 0) rotate(-12deg); }
+  }
   @keyframes rise {
     from { transform: scaleY(0); }
     to { transform: scaleY(1); }
@@ -48,6 +58,13 @@
   @keyframes confetti {
     0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 1; }
     100% { transform: translate3d(var(--dx, 0), 105vh, 0) rotate(var(--rot, 540deg)); opacity: 0.9; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-eq,
+  .animate-drift {
+    animation: none !important;
   }
 }
 

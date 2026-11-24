@@ -342,7 +342,6 @@ export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
             <ArtistView
               key={current.id}
               artistId={current.id}
-              targetId={state.target?.id ?? null}
               isFirst={state.yourPath.length === 1}
               onOpenAlbum={openAlbum}
               demo={demo}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RELEASE_GROUPS, type ArtistPage, type ReleaseGroup, type ReleaseSummary } from '../../../shared/types';
-import { ExternalIcon, FlagIcon, PlayIcon } from '../components/Icons';
+import { ExternalIcon, PlayIcon } from '../components/Icons';
 import { ArtistImage, Cover } from '../components/Media';
 import { api } from '../lib/api';
 import { useDominantColor } from '../lib/color';
@@ -75,17 +75,7 @@ function useArtistData(artistId: string) {
   return { data, error, loadingMore, loadMore, reload, requested };
 }
 
-function ReleaseCard({
-  release,
-  group,
-  onOpen,
-  isTarget,
-}: {
-  release: ReleaseSummary;
-  group: ReleaseGroup;
-  onOpen: () => void;
-  isTarget: boolean;
-}) {
+function ReleaseCard({ release, group, onOpen }: { release: ReleaseSummary; group: ReleaseGroup; onOpen: () => void }) {
   const sub = group === 'appears_on' ? release.artists.map((a) => a.name).join(', ') : releaseTypeLabel(release.type, release.totalTracks);
   return (
     <button
@@ -96,16 +86,7 @@ function ReleaseCard({
       className="group flex flex-col rounded-md p-2.5 text-left transition hover:bg-sp-hover focus-visible:bg-sp-hover focus-visible:outline-none sm:p-3"
     >
       <div className="relative mb-3">
-        <Cover
-          src={release.coverSmall ?? release.cover}
-          alt={release.name}
-          className={`shadow-[0_8px_24px_rgba(0,0,0,.5)] ${isTarget ? 'ring-2 ring-[#f573a0] ring-offset-2 ring-offset-sp-base' : ''}`}
-        />
-        {isTarget && (
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-[#f573a0] px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-black shadow-lg">
-            <FlagIcon size={11} /> Ziel
-          </span>
-        )}
+        <Cover src={release.coverSmall ?? release.cover} alt={release.name} className="shadow-[0_8px_24px_rgba(0,0,0,.5)]" />
         <span className="absolute bottom-2 right-2 grid h-12 w-12 translate-y-2 place-items-center rounded-full bg-sp-green text-black opacity-0 shadow-[0_8px_8px_rgba(0,0,0,.3)] transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-hover:scale-100 hover:scale-105 hover:bg-sp-green-bright">
           <PlayIcon size={22} />
         </span>
@@ -139,10 +120,8 @@ export function ArtistView({
   isFirst,
   onOpenAlbum,
   demo,
-  targetId,
 }: {
   artistId: string;
-  targetId: string | null;
   isFirst: boolean;
   onOpenAlbum: (release: ReleaseSummary, group: ReleaseGroup) => void;
   demo: boolean;
@@ -268,13 +247,7 @@ export function ArtistView({
               {!section.error && !section.lazy && items.length === 0 && <p className="px-2 py-3 text-sm text-sp-muted sm:px-3">Nichts gefunden.</p>}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-1 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-2">
                 {items.map((r) => (
-                  <ReleaseCard
-                    key={r.id}
-                    release={r}
-                    group={group}
-                    onOpen={() => onOpenAlbum(r, group)}
-                    isTarget={!!targetId && r.artists.some((a) => a.id === targetId)}
-                  />
+                  <ReleaseCard key={r.id} release={r} group={group} onOpen={() => onOpenAlbum(r, group)} />
                 ))}
               </div>
               {section.next !== null && !section.lazy && (
