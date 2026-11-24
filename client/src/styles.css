@@ -23,6 +23,9 @@
   --animate-confetti: confetti 2.8s ease-in forwards;
   --animate-rise: rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-eq: eq 1.1s ease-in-out infinite;
+  --animate-sway: sway 6s ease-in-out infinite;
+  --animate-float: float 2.6s ease-in-out infinite;
+  --animate-twinkle: twinkle 2.4s ease-in-out infinite;
   --animate-drift: drift 60s linear infinite;
   --animate-target-glow: target-glow 1.6s ease-in-out infinite;
 
@@ -38,6 +41,18 @@
   @keyframes shimmer {
     from { background-position: -400px 0; }
     to { background-position: 400px 0; }
+  }
+  @keyframes sway {
+    0%, 100% { transform: rotate(var(--rot, 0deg)); }
+    50% { transform: rotate(calc(var(--rot, 0deg) * -0.35)); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  @keyframes twinkle {
+    0%, 100% { transform: scale(0.3) rotate(0deg); opacity: 0; }
+    50% { transform: scale(1) rotate(45deg); opacity: 1; }
   }
   @keyframes eq {
     0%, 100% { transform: scaleY(1); }
@@ -63,7 +78,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-eq,
-  .animate-drift {
+  .animate-drift,
+  .animate-sway,
+  .animate-float,
+  .animate-twinkle {
     animation: none !important;
   }
 }
