@@ -115,3 +115,20 @@ export function seeded(seed: number) {
     return (s >>> 0) / 4294967296;
   };
 }
+
+// ---------- Tiefe ----------
+
+/** Weichzeichner (Schlagschatten, Leuchten, Spiegelungen) */
+export function Blur({ id, std = 2 }: { id: string; std?: number }) {
+  return (
+    <filter id={id} x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation={std} />
+    </filter>
+  );
+}
+
+/** Kreis als Pfad – im Uhrzeigersinn (cw) oder dagegen (für Löcher mit nonzero-Füllregel) */
+export function circlePath(cx: number, cy: number, r: number, cw = true): string {
+  const s = cw ? 1 : 0;
+  return `M${cx - r} ${cy}a${r} ${r} 0 1 ${s} ${2 * r} 0a${r} ${r} 0 1 ${s} ${-2 * r} 0Z`;
+}

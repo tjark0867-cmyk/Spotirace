@@ -155,8 +155,8 @@ export interface TeamPublic {
   takeoverAt: number | null;
 }
 
-export type CheerKind = 'flame' | 'thumb' | 'bolt';
-export const CHEER_KINDS: CheerKind[] = ['flame', 'thumb', 'bolt'];
+export type CheerKind = 'flame' | 'horn' | 'bolt';
+export const CHEER_KINDS: CheerKind[] = ['flame', 'horn', 'bolt'];
 
 // ---------- Sabotage ----------
 

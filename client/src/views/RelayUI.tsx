@@ -10,7 +10,7 @@ import { activeLeg, myTeam, playerName } from '../lib/modes';
 import { sound } from '../lib/sound';
 import { useFx, useGame, useServerNow } from '../lib/useGame';
 
-const CHEER_LABEL: Record<CheerKind, string> = { flame: 'Feuer!', thumb: 'Stark!', bolt: 'Schneller!' };
+const CHEER_LABEL: Record<CheerKind, string> = { flame: 'Feuer!', horn: 'Gib Gas!', bolt: 'Schneller!' };
 
 // ---------- Strecke A → B → C ----------
 

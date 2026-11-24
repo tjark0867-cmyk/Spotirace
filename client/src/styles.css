@@ -141,8 +141,8 @@
   }
   @keyframes crate-lid {
     0% { transform: none; }
-    60% { transform: translate(2px, -15px) rotate(-19deg); }
-    100% { transform: translate(1px, -12px) rotate(-14deg); }
+    60% { transform: translate(3px, -13px) rotate(-11deg); }
+    100% { transform: translate(2px, -10px) rotate(-8deg); }
   }
   @keyframes crate-rays {
     0% { transform: scale(0.2); opacity: 0; }
