@@ -28,6 +28,17 @@
   --animate-twinkle: twinkle 2.4s ease-in-out infinite;
   --animate-drift: drift 60s linear infinite;
   --animate-target-glow: target-glow 1.6s ease-in-out infinite;
+  --animate-frost-in: frost-in 0.6s ease-out both;
+  --animate-splat: splat 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  --animate-dome: dome 2.2s ease-in-out infinite;
+  --animate-crate-pop: crate-pop 2.6s ease-in-out both;
+  --animate-crate-shake: crate-shake 0.6s ease-in-out 0.25s both;
+  --animate-item-rise: item-rise 1.9s cubic-bezier(0.2, 0.9, 0.3, 1.15) 0.8s both;
+  --animate-sticker: sticker 2.2s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  --animate-baton: baton 1.5s cubic-bezier(0.5, 0, 0.3, 1) 0.35s both;
+  --animate-banner: banner 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  --animate-slot-in: slot-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+  --animate-hit: hit 0.5s ease-out both;
 
   @keyframes pop {
     0% { transform: scale(0.4); opacity: 0; }
@@ -70,6 +81,81 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(245, 115, 160, 0.55); }
     50% { box-shadow: 0 0 0 6px rgba(245, 115, 160, 0); }
   }
+  @keyframes frost-in {
+    from { opacity: 0; transform: scale(1.06); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes splat {
+    0% { transform: scale(0.2); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes dome {
+    0%, 100% { opacity: 0.85; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+  }
+  @keyframes crate-pop {
+    0% { transform: scale(0.3) translateY(40px); opacity: 0; }
+    10% { transform: scale(1.05) translateY(0); opacity: 1; }
+    14% { transform: scale(1); }
+    85% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.85) translateY(30px); opacity: 0; }
+  }
+  @keyframes crate-shake {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(-6deg); }
+    30% { transform: rotate(5deg); }
+    45% { transform: rotate(-4deg); }
+    60% { transform: rotate(3deg); }
+    80% { transform: rotate(-1deg); }
+  }
+  @keyframes item-rise {
+    0% { transform: translate(-50%, 60px) scale(0.2) rotate(-25deg); opacity: 0; }
+    35% { transform: translate(-50%, -78px) scale(1.18) rotate(6deg); opacity: 1; }
+    50% { transform: translate(-50%, -66px) scale(1) rotate(0deg); }
+    100% { transform: translate(-50%, -70px) scale(1) rotate(0deg); opacity: 1; }
+  }
+  @keyframes sticker {
+    0% { transform: translate(0, 30px) scale(0.2) rotate(-30deg); opacity: 0; }
+    18% { transform: translate(0, -10px) scale(1.15) rotate(8deg); opacity: 1; }
+    30% { transform: translate(0, 0) scale(1) rotate(0deg); }
+    75% { opacity: 1; }
+    100% { transform: translate(var(--dx, 0), -120px) scale(0.9) rotate(var(--rot, 10deg)); opacity: 0; }
+  }
+  @keyframes baton {
+    0% { transform: translateX(var(--from, -130px)) rotate(-30deg); }
+    60% { transform: translateX(10px) rotate(8deg); }
+    100% { transform: translateX(var(--to, 130px)) rotate(0deg); }
+  }
+  @keyframes banner {
+    from { transform: scale(0.6) rotate(-4deg); opacity: 0; }
+    to { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  @keyframes slot-in {
+    from { transform: scale(0.2) rotate(-40deg); opacity: 0; }
+    to { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  @keyframes hit {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.25); }
+    100% { transform: scale(1); }
+  }
+  @keyframes crate-lid {
+    0% { transform: none; }
+    60% { transform: translate(2px, -15px) rotate(-19deg); }
+    100% { transform: translate(1px, -12px) rotate(-14deg); }
+  }
+  @keyframes crate-rays {
+    0% { transform: scale(0.2); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes gap-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+  }
+  @keyframes key-glow {
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(255, 210, 63, 0.55), 0 0 14px rgba(255, 196, 40, 0.18); }
+    50% { box-shadow: inset 0 0 0 1px rgba(255, 230, 140, 0.95), 0 0 22px rgba(255, 196, 40, 0.38); }
+  }
   @keyframes confetti {
     0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 1; }
     100% { transform: translate3d(var(--dx, 0), 105vh, 0) rotate(var(--rot, 540deg)); opacity: 0.9; }
@@ -81,9 +167,40 @@
   .animate-drift,
   .animate-sway,
   .animate-float,
-  .animate-twinkle {
+  .animate-twinkle,
+  .animate-dome {
     animation: none !important;
   }
+}
+
+/* Item-Kiste: Deckel springt auf, Licht strömt heraus */
+.crate-lid-open {
+  animation: crate-lid 0.55s cubic-bezier(0.3, 1.4, 0.5, 1) 0.8s both;
+}
+.crate-rays-open {
+  animation: crate-rays 0.6s ease-out 0.8s both;
+}
+.crate-gap {
+  animation: gap-pulse 1.6s ease-in-out infinite;
+}
+
+/* Tinte: Bilder werden verschmiert */
+.inked img {
+  filter: blur(7px) saturate(0.3) brightness(0.55);
+  transform: scale(1.08);
+}
+
+/* Generalschlüssel: entsperrte Songs leuchten golden */
+.key-glow {
+  background: linear-gradient(90deg, rgba(255, 210, 63, 0.16), rgba(255, 210, 63, 0.04) 60%, transparent);
+  animation: key-glow 1.8s ease-in-out infinite;
+}
+
+/* Frost-Rauschen nur am Rand */
+.frost-noise {
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent 42%, #000 92%);
+  mask-image: radial-gradient(ellipse at center, transparent 42%, #000 92%);
+  opacity: 0.85;
 }
 
 @layer base {

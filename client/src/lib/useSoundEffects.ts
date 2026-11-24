@@ -38,7 +38,8 @@ export function useSoundEffects(state: RoomState | null) {
     if (state.phase === 'playing') {
       if (state.round === p.round && p.yourPath.length > 0 && state.yourPath.length > p.yourPath.length) {
         const last = state.yourPath[state.yourPath.length - 1];
-        sound.play(last.back ? 'back' : 'jump');
+        // Rückspulen durch einen Gegner hat einen eigenen Sound (kommt als Effekt-Ereignis)
+        if (!last.rewind) sound.play(last.back ? 'back' : 'jump');
       } else if (me && meBefore && me.status !== meBefore.status && (me.status === 'gaveup' || me.status === 'timeout')) {
         sound.play('lose');
       }

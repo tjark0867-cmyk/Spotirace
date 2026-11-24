@@ -1,5 +1,10 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import type { AlbumDetail, ArtistSummary, PlayerPublic, ReleaseGroup, ReleaseSummary, RoomState } from '../../../shared/types';
+import { TEAM_COLORS, TEAM_NAMES, type AlbumDetail, type ArtistSummary, type ItemKind, type PlayerPublic, type ReleaseGroup, type ReleaseSummary, type RoomState } from '../../../shared/types';
+import { TeamCrest } from '../components/art/Team';
+import { InkContext } from '../lib/ink';
+import { active, activeLeg, amRunner, currentGoal, isRelay, myTeam } from '../lib/modes';
+import { RelayDonePanel, RelayFx, RouteStrip, SpectatorView } from './RelayUI';
+import { EffectOverlays, InventoryBar, PeekCard, SabotageFx, TargetPicker } from './SabotageUI';
 import { AppShell } from '../components/AppShell';
 import { Confetti } from '../components/Confetti';
 import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, FlagIcon, UndoIcon } from '../components/Icons';
@@ -34,6 +39,39 @@ function CountdownOverlay({ state }: { state: RoomState }) {
   }, [label, show]);
 
   if (!show || !state.start || !state.target) return null;
+
+  const team = myTeam(state) ?? state.teams?.[0] ?? null;
+  if (isRelay(state) && team) {
+    const mine = team.legs.find((l) => l.runnerId === state.you);
+    return (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-black/85 backdrop-blur-md">
+        <div className="flex w-full max-w-lg flex-col items-center gap-8 px-5 text-center">
+          <div className="flex items-center gap-3">
+            <TeamCrest team={team.id} size={56} />
+            <div className="text-left">
+              <div className="text-xs font-bold uppercase tracking-widest text-sp-sub">Team-Staffel</div>
+              <div className="text-2xl font-black" style={{ color: TEAM_COLORS[team.id] }}>
+                {TEAM_NAMES[team.id]}
+              </div>
+            </div>
+          </div>
+          <div className="w-full">
+            <RouteStrip team={team} size={56} />
+          </div>
+          <div className="text-white/85">
+            {mine
+              ? mine.index === 0
+                ? 'Du läufst die erste Etappe – gleich geht’s los!'
+                : `Du läufst Etappe ${mine.index + 1} ab ${mine.from.name}. Bis dahin: zuschauen und anfeuern.`
+              : 'Du schaust zu.'}
+          </div>
+          <div key={label} className={`animate-pop font-black tabular-nums ${n > 0 ? 'text-[7rem] leading-none' : 'text-7xl text-sp-green-bright'}`}>
+            {label}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/85 backdrop-blur-md">
@@ -144,15 +182,23 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
   const { send } = useGame();
   const now = useServerNow(250);
   const startAt = state.startAt ?? now;
-  const playing = me?.status === 'playing' && state.phase === 'playing';
-  const elapsed = me?.finishMs ?? (state.phase === 'countdown' ? 0 : Math.max(0, (state.endedAt ?? now) - startAt));
+  const relay = isRelay(state);
+  const team = myTeam(state);
+  const leg = activeLeg(team);
+  const legStarted = !relay || (!!leg?.startAt && leg.startAt <= now);
+  const playing = amRunner(state) && state.phase === 'playing' && legStarted;
+  const goal = currentGoal(state);
+  const checkpoint = goal.kind === 'checkpoint';
+  const goalColor = checkpoint ? '#ffc864' : '#f573a0';
+  const clicks = relay ? (team?.clicks ?? 0) : (me?.clicks ?? 0);
+  const elapsed = (relay ? team?.finishMs : me?.finishMs) ?? (state.phase === 'countdown' ? 0 : Math.max(0, (state.endedAt ?? now) - startAt));
   const limitMs = state.endsAt ? state.endsAt - startAt : null;
   const remaining = state.endsAt ? Math.max(0, state.endsAt - now) : null;
   const progress = limitMs ? Math.min(1, Math.max(0, (now - startAt) / limitMs)) : null;
   let depth = 0;
   for (const step of state.yourPath) depth += step.back ? -1 : 1;
   const canBack = playing && state.settings.allowBack && depth > 1;
-  const stillPlaying = state.players.filter((p) => p.status === 'playing').length;
+  const stillPlaying = relay ? (state.teams ?? []).filter((t) => t.status === 'playing').length : state.players.filter((p) => p.status === 'playing').length;
 
   // Die letzten 10 Sekunden ticken
   const secondsLeft = remaining !== null && state.phase === 'playing' ? Math.ceil(remaining / 1000) : null;
@@ -162,14 +208,17 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
 
   return (
     <footer className="grid h-[76px] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-2 sm:gap-4">
-      {/* Ziel */}
+      {/* Ziel (Staffel: Ende der laufenden Etappe) */}
       <div className="flex min-w-0 items-center gap-3">
-        {state.target && (
-          <ArtistImage artist={state.target} size={52} className="!h-10 !w-10 ring-2 ring-[#f573a0]/70 sm:!h-[52px] sm:!w-[52px]" />
+        {goal.artist && (
+          <ArtistImage artist={goal.artist} size={52} className="!h-10 !w-10 ring-2 sm:!h-[52px] sm:!w-[52px]" />
         )}
         <div className="min-w-0">
-          <div className="text-[11px] font-bold uppercase tracking-widest text-[#f573a0]">Ziel</div>
-          <div className="truncate text-sm font-bold text-white sm:text-base">{state.target?.name}</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest" style={{ color: goalColor }}>
+            {checkpoint ? 'Wechsel' : 'Ziel'}
+            {relay && team && <span className="hidden text-sp-muted sm:inline"> · Etappe {team.active + 1}/{team.legs.length}</span>}
+          </div>
+          <div className="truncate text-sm font-bold text-white sm:text-base">{goal.artist?.name}</div>
         </div>
       </div>
 
@@ -196,8 +245,8 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
       {/* Klicks + Aktionen */}
       <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
         <div className="text-right">
-          <div className="text-xl font-extrabold tabular-nums leading-none">{me?.clicks ?? 0}</div>
-          <div className="text-[10px] uppercase tracking-wider text-sp-muted">Klicks</div>
+          <div className="text-xl font-extrabold tabular-nums leading-none">{clicks}</div>
+          <div className="text-[10px] uppercase tracking-wider text-sp-muted">{relay ? 'Team' : 'Klicks'}</div>
         </div>
         {state.settings.allowBack && (
           <button
@@ -213,7 +262,7 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
         <button
           type="button"
           disabled={!playing}
-          onClick={() => window.confirm('Wirklich aufgeben?') && send({ t: 'giveUp' })}
+          onClick={() => window.confirm(relay ? 'Wirklich aufgeben? Dein ganzes Team scheidet aus.' : 'Wirklich aufgeben?') && send({ t: 'giveUp' })}
           className="hidden rounded-full border border-sp-muted px-4 py-1.5 text-sm font-bold transition enabled:hover:border-white disabled:opacity-30 sm:block"
         >
           Aufgeben
@@ -221,7 +270,7 @@ function PlayerBar({ state, me }: { state: RoomState; me: PlayerPublic | null })
         <button
           type="button"
           disabled={!playing}
-          onClick={() => window.confirm('Wirklich aufgeben?') && send({ t: 'giveUp' })}
+          onClick={() => window.confirm(relay ? 'Wirklich aufgeben? Dein ganzes Team scheidet aus.' : 'Wirklich aufgeben?') && send({ t: 'giveUp' })}
           className="grid h-10 w-10 place-items-center rounded-full text-sp-sub disabled:opacity-30 sm:hidden"
           title="Aufgeben"
         >
@@ -274,13 +323,24 @@ function DonePanel({ state, me }: { state: RoomState; me: PlayerPublic }) {
 
 export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
   const { me } = useGame();
+  const now = useServerNow(500);
   const mainRef = useRef<HTMLElement | null>(null);
   const artistScroll = useRef(0);
   const [view, setView] = useState<View>({ kind: 'artist' });
   const restoreScroll = useRef<number | null>(null);
+  const [picker, setPicker] = useState<{ slot: number; item: ItemKind } | null>(null);
 
+  const relay = isRelay(state);
+  const team = myTeam(state);
+  const runner = amRunner(state);
+  const goal = currentGoal(state);
   const current: ArtistSummary | null = state.yourPath[state.yourPath.length - 1]?.artist ?? null;
-  const active = me?.status === 'playing';
+  const leg = activeLeg(team);
+  const legStarted = !relay || (!!leg?.startAt && leg.startAt <= now);
+  const frozen = active(me?.effects.frozenUntil, now);
+  const inked = active(me?.effects.inkUntil, now) && state.phase === 'playing';
+  const keyActive = !!state.settings.sabotage && active(me?.effects.keyUntil, now);
+  const canMove = runner && legStarted && !frozen;
 
   // Neuer Artist → Artist-Seite von oben zeigen
   useEffect(() => {
@@ -327,41 +387,65 @@ export function Game({ state, demo }: { state: RoomState; demo: boolean }) {
     return () => window.removeEventListener('popstate', onPop);
   }, [backToArtist]);
 
-  const showDone = !!me && (me.status !== 'playing' || !current) && state.phase !== 'countdown';
+  const closePicker = useCallback(() => setPicker(null), []);
 
-  return (
-    <AppShell state={state} mainRef={mainRef} bottomBar={<PlayerBar state={state} me={me} />}>
-      {(state.phase === 'countdown' || state.phase === 'playing') && <CountdownOverlay state={state} />}
-
-      {showDone && me ? (
-        <DonePanel state={state} me={me} />
-      ) : current ? (
-        <>
-          <TopBar state={state} view={view} onBack={backToArtist} scrollEl={mainRef} />
-          <div className={view.kind === 'artist' ? '-mt-[56px]' : 'hidden'}>
-            <ArtistView
-              key={current.id}
-              artistId={current.id}
-              isFirst={state.yourPath.length === 1}
-              onOpenAlbum={openAlbum}
+  let body;
+  if (relay && team && team.status === 'playing' && !runner) {
+    // Staffel: Teamkollegen schauen live zu (ohne eigene Spotify-Anfragen)
+    body = <SpectatorView state={state} />;
+  } else if (relay && team && team.status !== 'playing' && state.phase !== 'countdown') {
+    body = <RelayDonePanel state={state} team={team} />;
+  } else if (!!me && (me.status !== 'playing' || !current) && state.phase !== 'countdown') {
+    body = <DonePanel state={state} me={me} />;
+  } else if (current) {
+    body = (
+      <>
+        <TopBar state={state} view={view} onBack={backToArtist} scrollEl={mainRef} />
+        <div className={view.kind === 'artist' ? '-mt-[56px]' : 'hidden'}>
+          <ArtistView key={current.id} artistId={current.id} isFirst={state.yourPath.length === 1} onOpenAlbum={openAlbum} demo={demo} />
+        </div>
+        {view.kind === 'album' && (
+          <div className="-mt-[56px]">
+            <AlbumView
+              key={view.albumId}
+              albumId={view.albumId}
+              current={current}
+              target={goal.artist}
+              goalKind={goal.kind}
+              canMove={canMove}
+              keyActive={keyActive}
               demo={demo}
+              onLoaded={onAlbumLoaded}
             />
           </div>
-          {view.kind === 'album' && (
-            <div className="-mt-[56px]">
-              <AlbumView
-                key={view.albumId}
-                albumId={view.albumId}
-                current={current}
-                target={state.target}
-                canMove={active}
-                demo={demo}
-                onLoaded={onAlbumLoaded}
-              />
-            </div>
-          )}
+        )}
+      </>
+    );
+  } else body = null;
+
+  const sabotage = state.settings.sabotage;
+  const bottom = (
+    <>
+      {sabotage && <InventoryBar state={state} onPick={(slot, item) => setPicker({ slot, item })} />}
+      <PlayerBar state={state} me={me} />
+    </>
+  );
+
+  return (
+    <InkContext.Provider value={inked}>
+      <AppShell state={state} mainRef={mainRef} bottomBar={bottom}>
+        {(state.phase === 'countdown' || state.phase === 'playing') && <CountdownOverlay state={state} />}
+        {body}
+      </AppShell>
+      {relay && <RelayFx state={state} />}
+      {sabotage && (
+        <>
+          <SabotageFx state={state} />
+          <EffectOverlays state={state} />
+          <PeekCard state={state} />
+          {picker && <TargetPicker state={state} slot={picker.slot} item={picker.item} onClose={closePicker} />}
         </>
-      ) : null}
-    </AppShell>
+      )}
+    </InkContext.Provider>
   );
 }

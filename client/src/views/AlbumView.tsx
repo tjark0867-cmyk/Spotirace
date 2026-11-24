@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import type { AlbumDetail, ArtistSummary, TrackInfo } from '../../../shared/types';
 import { ArrowRightIcon, ClockIcon, ExternalIcon, FlagIcon, LockIcon } from '../components/Icons';
 import { Cover } from '../components/Media';
+import { MasterKey } from '../components/art/Items';
 import { api } from '../lib/api';
 import { useDominantColor } from '../lib/color';
 import { formatAlbumLength, formatTrackDuration, plural, releaseTypeLabel } from '../lib/format';
@@ -33,15 +34,21 @@ function TrackRow({
   current,
   canMove,
   targetId,
+  unlocked,
+  goalLabel,
 }: {
   track: TrackInfo;
   album: AlbumDetail;
   current: ArtistSummary;
   canMove: boolean;
   targetId: string | null;
+  /** Generalschlüssel: gesperrter Song ist gerade trotzdem auswählbar */
+  unlocked: boolean;
+  goalLabel: string;
 }) {
   const { move, pendingMove } = useGame();
-  const playable = track.artists.some((a) => a.id === current.id);
+  const withCurrent = track.artists.some((a) => a.id === current.id);
+  const playable = withCurrent || unlocked;
   const jumpable = playable && track.artists.some((a) => a.id !== current.id);
   const hasTarget = !!targetId && track.artists.some((a) => a.id === targetId);
 
@@ -49,9 +56,11 @@ function TrackRow({
     ? playable
       ? 'bg-gradient-to-r from-[#f573a0]/25 via-[#f573a0]/10 to-transparent ring-1 ring-[#f573a0]/60 hover:from-[#f573a0]/35'
       : 'opacity-75 ring-1 ring-[#f573a0]/30'
-    : playable
-      ? 'hover:bg-white/[0.08]'
-      : 'opacity-40';
+    : unlocked
+      ? 'key-glow hover:bg-[#ffd23f]/10'
+      : playable
+        ? 'hover:bg-white/[0.08]'
+        : 'opacity-40';
 
   return (
     <div
@@ -61,7 +70,7 @@ function TrackRow({
       onClick={playable ? undefined : () => sound.play('denied')}
     >
       <div className="text-right text-base tabular-nums text-sp-sub">
-        {playable ? track.number : <LockIcon size={14} className="ml-auto" />}
+        {unlocked ? <MasterKey size={22} className="-mr-1 ml-auto" /> : playable ? track.number : <LockIcon size={14} className="ml-auto" />}
       </div>
       <div className="min-w-0">
         <div className={`truncate text-base ${playable ? 'text-white' : 'text-sp-sub'}`}>{track.name}</div>
@@ -85,11 +94,11 @@ function TrackRow({
                     className={`my-0.5 inline-flex animate-target-glow items-center gap-1.5 rounded-full bg-[#f573a0] px-2.5 py-0.5 align-middle font-extrabold text-black transition hover:scale-105 hover:bg-[#ff8fb6] disabled:cursor-wait ${
                       pendingMove === a.id ? 'animate-pulse' : ''
                     }`}
-                    title={`Zum Ziel ${a.name} springen`}
+                    title={`Zum ${goalLabel} ${a.name} springen`}
                   >
                     <FlagIcon size={13} />
                     {a.name}
-                    <span className="rounded-full bg-black/15 px-1.5 text-[10px] font-black uppercase tracking-wide">Ziel</span>
+                    <span className="rounded-full bg-black/15 px-1.5 text-[10px] font-black uppercase tracking-wide">{goalLabel}</span>
                   </button>
                 ) : isTarget ? (
                   <span className="my-0.5 inline-flex items-center gap-1 rounded-full border border-[#f573a0] px-2 align-middle font-bold text-[#f573a0]">
@@ -121,7 +130,7 @@ function TrackRow({
       <div className="flex items-center gap-3">
         {hasTarget ? (
           <span className="hidden items-center gap-1 rounded-full bg-[#f573a0]/20 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-[#f573a0] sm:inline-flex">
-            <FlagIcon size={11} /> Ziel
+            <FlagIcon size={11} /> {goalLabel}
           </span>
         ) : (
           jumpable && (
@@ -140,17 +149,24 @@ export function AlbumView({
   albumId,
   current,
   target,
+  goalKind = 'target',
   canMove,
+  keyActive = false,
   demo,
   onLoaded,
 }: {
   albumId: string;
   current: ArtistSummary;
+  /** Ziel – in der Staffel das Ende der laufenden Etappe */
   target: ArtistSummary | null;
+  goalKind?: 'target' | 'checkpoint';
   canMove: boolean;
+  /** Generalschlüssel aktiv: gesperrte Songs sind auswählbar */
+  keyActive?: boolean;
   demo: boolean;
   onLoaded?: (album: AlbumDetail) => void;
 }) {
+  const goalLabel = goalKind === 'checkpoint' ? 'Wechsel' : 'Ziel';
   const { data, error, reload } = useAlbum(albumId);
   const color = useDominantColor(data?.cover, albumId);
 
@@ -158,9 +174,13 @@ export function AlbumView({
     if (data) onLoaded?.(data);
   }, [data, onLoaded]);
 
+  // Generalschlüssel: alle Songs eines Albums, in dem der aktuelle Artist vorkommt
+  const related = !!data && (data.artists.some((a) => a.id === current.id) || data.tracks.some((t) => t.artists.some((a) => a.id === current.id)));
+  const unlockAll = keyActive && related;
+  const reachableTrack = (t: TrackInfo) => unlockAll || t.artists.some((a) => a.id === current.id);
+
   // Funkeln, wenn das Ziel in diesem Album direkt erreichbar ist
-  const canWinHere =
-    !!data && !!target && canMove && data.tracks.some((t) => t.artists.some((a) => a.id === target.id) && t.artists.some((a) => a.id === current.id));
+  const canWinHere = !!data && !!target && canMove && data.tracks.some((t) => t.artists.some((a) => a.id === target.id) && reachableTrack(t));
   useEffect(() => {
     if (canWinHere) sound.play('found');
   }, [canWinHere]);
@@ -180,7 +200,7 @@ export function AlbumView({
   const isOwn = !!data?.artists.some((a) => a.id === current.id);
   const targetId = target?.id ?? null;
   const targetTracks = data && targetId ? data.tracks.filter((t) => t.artists.some((a) => a.id === targetId)) : [];
-  const reachable = targetTracks.filter((t) => t.artists.some((a) => a.id === current.id));
+  const reachable = targetTracks.filter(reachableTrack);
   const scrollToTrack = (trackId: string) => {
     const el = document.getElementById(`track-${trackId}`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -244,9 +264,10 @@ export function AlbumView({
                     <FlagIcon size={20} />
                   </span>
                   <div className="min-w-0">
-                    <div className="text-lg font-black leading-tight">Ziel gefunden!</div>
+                    <div className="text-lg font-black leading-tight">{goalKind === 'checkpoint' ? 'Wechselpunkt gefunden!' : 'Ziel gefunden!'}</div>
                     <div className="text-sm font-semibold">
-                      {target.name} ist auf „{reachable[0].name}“. Tippe auf den pinken Namen, um zu gewinnen.
+                      {target.name} ist auf „{reachable[0].name}“.{' '}
+                      {goalKind === 'checkpoint' ? 'Tippe auf den pinken Namen, um den Stab zu übergeben.' : 'Tippe auf den pinken Namen, um zu gewinnen.'}
                     </div>
                   </div>
                 </div>
@@ -273,7 +294,14 @@ export function AlbumView({
 
         {data && (
           <div className="px-2 pb-2 pt-6 sm:px-3">
-            {isOwn ? (
+            {unlockAll && !isOwn ? (
+              <div className="flex items-center gap-3 rounded-lg bg-[#ffd23f]/10 p-4 ring-1 ring-[#ffd23f]/40">
+                <MasterKey size={36} className="shrink-0" />
+                <p className="text-sm text-white/90">
+                  <b className="text-[#ffd965]">Generalschlüssel aktiv:</b> Gerade sind auch die gesperrten Songs auswählbar – schnell zuschlagen!
+                </p>
+              </div>
+            ) : isOwn ? (
               <p className="text-sm text-sp-sub">
                 Klicke auf einen <span className="font-semibold text-white underline decoration-white/30 underline-offset-[3px]">anderen Artist</span> in
                 einem Song, um zu ihm zu springen.
@@ -315,7 +343,16 @@ export function AlbumView({
                 {data.tracks
                   .filter((t) => t.disc === disc)
                   .map((t) => (
-                    <TrackRow key={t.id} track={t} album={data} current={current} canMove={canMove} targetId={targetId} />
+                    <TrackRow
+                      key={t.id}
+                      track={t}
+                      album={data}
+                      current={current}
+                      canMove={canMove}
+                      targetId={targetId}
+                      unlocked={unlockAll && !t.artists.some((a) => a.id === current.id)}
+                      goalLabel={goalLabel}
+                    />
                   ))}
               </Fragment>
             ))}

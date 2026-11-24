@@ -24,7 +24,20 @@ export type SoundName =
   | 'lose'
   | 'tick'
   | 'results'
-  | 'found';
+  | 'found'
+  // Sabotage + Staffel
+  | 'crate'
+  | 'crateFull'
+  | 'freeze'
+  | 'ink'
+  | 'rewind'
+  | 'shield'
+  | 'blocked'
+  | 'key'
+  | 'peek'
+  | 'attack'
+  | 'handover'
+  | 'cheer';
 
 const STORAGE_KEY = 'spotirace.sound';
 const midi = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -271,6 +284,64 @@ export class SoundEngine {
     });
   }
 
+  /** Ton mit Vibrato/Triller (Pfeife, Bandsalat) */
+  private wobble(
+    t: number,
+    freq: number,
+    o: { type?: Wave; gain?: number; dur: number; to?: number; rate: number; depth: number; lowpass?: number; pan?: number },
+  ) {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = o.type ?? 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + o.dur * 0.9);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = o.rate;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = o.depth;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    const g = ctx.createGain();
+    const gain = o.gain ?? 0.1;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.02);
+    g.gain.setValueAtTime(gain, t + o.dur * 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+    let node: AudioNode = osc;
+    if (o.lowpass) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = o.lowpass;
+      osc.connect(lp);
+      node = lp;
+    }
+    node.connect(g);
+    g.connect(this.out(ctx, o.pan ?? 0));
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + o.dur + 0.05);
+    lfo.stop(t + o.dur + 0.05);
+  }
+
+  /** Kurzer Rausch-Impuls (Klick, Knacken, Tropfen) */
+  private click(t: number, freq: number, dur: number, gain: number, pan = 0, q = 1.5) {
+    this.whoosh(t, dur, freq, freq * 0.85, gain, q, pan);
+  }
+
+  /** Angeschlagenes Metall: unharmonische Teiltöne, langes Ausklingen */
+  private metal(t: number, base: number, gain: number, decay = 1.2, pan = 0) {
+    const ratios: Array<[number, number]> = [
+      [1, 1],
+      [1.58, 0.7],
+      [2.33, 0.55],
+      [2.97, 0.4],
+      [3.87, 0.3],
+      [4.6, 0.22],
+    ];
+    ratios.forEach(([r, a], i) => this.tone(t, base * r, { type: 'sine', gain: gain * a, attack: 0.002, release: decay * (1 - i * 0.12), detune: (i % 2 ? 1 : -1) * 6, pan }));
+    this.click(t, 5200, 0.03, gain * 0.9, pan, 0.8);
+  }
+
   // ---------- Öffentliche Sounds ----------
 
   play(name: SoundName) {
@@ -362,6 +433,102 @@ export class SoundEngine {
         this.whoosh(t, 0.7, 200, 1400, 0.045, 0.7);
         this.pad(t + 0.05, [65, 69, 72], 0.045, 0.35, 1.1, 'triangle');
         this.bell(t + 0.45, 84, 0.08);
+        break;
+
+      // ---------- Sabotage ----------
+      case 'crate': {
+        // Holz klopft zweimal, der Riegel springt, dann funkelt das Item heraus
+        for (const [dt, p] of [[0, -0.2], [0.14, 0.2], [0.32, -0.1]] as const) {
+          this.tone(t + dt, 150, { type: 'sine', gain: 0.22, attack: 0.002, release: 0.12, to: 85, glide: 0.1 });
+          this.click(t + dt, 520, 0.06, 0.12, p, 1.2);
+        }
+        this.click(t + 0.78, 3400, 0.025, 0.12, 0, 2);
+        this.tone(t + 0.78, 900, { type: 'square', gain: 0.03, attack: 0.001, release: 0.04, lowpass: 2500 });
+        this.whoosh(t + 0.8, 0.6, 600, 7000, 0.06, 0.7);
+        [84, 88, 91, 96, 100].forEach((m, i) => this.bell(t + 0.86 + i * 0.055, m, 0.06, (i - 2) * 0.2));
+        this.pad(t + 0.9, [72, 76, 79], 0.035, 0.3, 0.9, 'triangle');
+        break;
+      }
+      case 'crateFull':
+        this.tone(t, 300, { type: 'triangle', gain: 0.1, attack: 0.004, release: 0.12, to: 220, glide: 0.1, lowpass: 1600 });
+        this.click(t, 700, 0.05, 0.06);
+        break;
+      case 'freeze': {
+        // Eis knistert, dann ein gläserner Schimmer
+        const r = Math.random;
+        for (let i = 0; i < 26; i++) {
+          const dt = r() * 0.7;
+          this.click(t + dt, 3500 + r() * 6000, 0.008 + r() * 0.02, 0.05 + r() * 0.07, (r() - 0.5) * 1.2, 3);
+        }
+        this.tone(t, 260, { type: 'sine', gain: 0.12, attack: 0.01, release: 0.4, to: 120, glide: 0.35 });
+        [96, 103, 100, 108].forEach((m, i) => this.tone(t + 0.05 + i * 0.09, midi(m), { gain: 0.04, attack: 0.003, release: 0.9, detune: i * 9, pan: (i - 1.5) * 0.3 }));
+        this.whoosh(t, 0.9, 9000, 4000, 0.03, 0.6);
+        break;
+      }
+      case 'ink': {
+        // Platschen: dumpfer Aufprall + nasses Rauschen + Tropfen
+        this.tone(t, 130, { type: 'sine', gain: 0.24, attack: 0.003, release: 0.2, to: 55, glide: 0.18 });
+        this.whoosh(t, 0.35, 2600, 260, 0.16, 0.7);
+        this.whoosh(t + 0.02, 0.25, 900, 200, 0.08, 1.2, -0.3);
+        [0.22, 0.31, 0.44].forEach((dt, i) =>
+          this.tone(t + dt, 700 + i * 180, { type: 'sine', gain: 0.07, attack: 0.002, release: 0.07, to: 1500 + i * 300, glide: 0.05, pan: (i - 1) * 0.5 }),
+        );
+        break;
+      }
+      case 'rewind':
+        // Band spult zurück (hoch, leiernd) und rastet ein
+        this.wobble(t, 260, { type: 'sawtooth', gain: 0.07, dur: 0.6, to: 1700, rate: 22, depth: 70, lowpass: 3200 });
+        this.whoosh(t, 0.6, 1500, 5000, 0.05, 2.5);
+        this.tone(t + 0.62, 170, { type: 'square', gain: 0.08, attack: 0.002, release: 0.08, lowpass: 900 });
+        this.click(t + 0.62, 2400, 0.03, 0.12);
+        break;
+      case 'shield':
+        this.whoosh(t, 0.4, 300, 3000, 0.06, 0.8);
+        this.metal(t + 0.12, 520, 0.07, 1.3);
+        this.bell(t + 0.14, 91, 0.04, 0.2);
+        break;
+      case 'blocked':
+        // Angriff prallt am Schild ab
+        this.metal(t, 680, 0.09, 1.1, -0.2);
+        this.metal(t + 0.02, 1020, 0.04, 0.8, 0.3);
+        this.whoosh(t + 0.03, 0.3, 4000, 900, 0.07, 1);
+        break;
+      case 'key':
+        // Schlüssel rein, zweimal drehen, Schloss springt auf
+        this.whoosh(t, 0.16, 3200, 1500, 0.06, 2);
+        this.click(t + 0.2, 4200, 0.02, 0.14, -0.2, 2.5);
+        this.tone(t + 0.2, 1900, { type: 'triangle', gain: 0.05, attack: 0.001, release: 0.05 });
+        this.click(t + 0.33, 3600, 0.025, 0.16, 0.2, 2.5);
+        this.tone(t + 0.33, 1500, { type: 'triangle', gain: 0.05, attack: 0.001, release: 0.06 });
+        this.bell(t + 0.42, 88, 0.07, -0.15);
+        this.bell(t + 0.5, 95, 0.06, 0.15);
+        break;
+      case 'peek':
+        // Papier raschelt
+        for (let i = 0; i < 6; i++) this.whoosh(t + i * 0.045, 0.06, 2600 + Math.random() * 2000, 1800, 0.06, 1.5, (Math.random() - 0.5) * 0.8);
+        this.pluck(t + 0.3, 79, 0.08, 0, 0.5);
+        this.pluck(t + 0.38, 86, 0.06, 0, 0.5);
+        break;
+      case 'attack':
+        // eigener Angriff fliegt los
+        this.whoosh(t, 0.32, 600, 6000, 0.09, 0.9, 0.3);
+        this.tone(t, 420, { type: 'triangle', gain: 0.07, attack: 0.004, release: 0.2, to: 1300, glide: 0.18, lowpass: 3000 });
+        break;
+      case 'handover': {
+        // Schiedsrichter-Pfiff mit Triller, dann ein großer Akkord
+        this.wobble(t, 2350, { gain: 0.07, dur: 0.42, rate: 28, depth: 120 });
+        this.wobble(t, 2350 * 1.5, { gain: 0.015, dur: 0.42, rate: 28, depth: 180 });
+        this.click(t, 3000, 0.06, 0.04);
+        const s = t + 0.45;
+        this.pad(s, [67, 71, 74, 79], 0.06, 0.35, 1.2);
+        [67, 71, 74, 79, 83].forEach((m, i) => this.pluck(s + i * 0.05, m, 0.11, (i - 2) * 0.2, 0.6));
+        this.bell(s + 0.1, 95, 0.06);
+        this.whoosh(s, 0.6, 500, 6000, 0.05, 0.6);
+        break;
+      }
+      case 'cheer':
+        this.tone(t, 520, { type: 'sine', gain: 0.12, attack: 0.003, release: 0.12, to: 1250, glide: 0.08 });
+        this.bell(t + 0.07, 91, 0.05, 0.2);
         break;
     }
   }

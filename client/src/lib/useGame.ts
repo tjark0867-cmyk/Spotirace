@@ -1,11 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import type { ClientMessage, PlayerPublic, RoomState, ServerMessage } from '../../../shared/types';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ClientMessage, FxEvent, PlayerPublic, RoomState, ServerMessage } from '../../../shared/types';
 import { sound } from './sound';
 
 export interface Toast {
   id: number;
   message: string;
-  kind: 'info' | 'error' | 'success';
+  kind: 'info' | 'error' | 'success' | 'attack';
+  /** Kleine Grafik links neben dem Text */
+  icon?: ReactNode;
 }
 
 function randomId(): string {
@@ -49,10 +51,20 @@ export function useGameConnection() {
   const sessionId = useRef(getSessionId());
   const toastId = useRef(0);
 
-  const toast = useCallback((message: string, kind: Toast['kind'] = 'info') => {
+  const fxListeners = useRef(new Set<(fx: FxEvent) => void>());
+
+  const toast = useCallback((message: string, kind: Toast['kind'] = 'info', icon?: ReactNode) => {
     const id = ++toastId.current;
-    setToasts((t) => [...t.slice(-3), { id, message, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 4500 : 3200);
+    setToasts((t) => [...t.slice(-3), { id, message, kind, icon }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' || kind === 'attack' ? 4500 : 3200);
+  }, []);
+
+  /** Effekt-Ereignisse (Kiste, Angriff, Übergabe …) abonnieren */
+  const subscribeFx = useCallback((fn: (fx: FxEvent) => void) => {
+    fxListeners.current.add(fn);
+    return () => {
+      fxListeners.current.delete(fn);
+    };
   }, []);
 
   useEffect(() => {
@@ -103,7 +115,11 @@ export function useGameConnection() {
             toast(msg.message, 'error');
             break;
           case 'error':
+            sound.play('error');
             toast(msg.message, 'error');
+            break;
+          case 'fx':
+            fxListeners.current.forEach((fn) => fn(msg.fx));
             break;
         }
       };
@@ -151,7 +167,7 @@ export function useGameConnection() {
 
   const me: PlayerPublic | null = state?.players.find((p) => p.id === state.you) ?? null;
 
-  return { state, me, inRoom, connection, toasts, toast, send, move, pendingMove, serverNow };
+  return { state, me, inRoom, connection, toasts, toast, send, move, pendingMove, serverNow, subscribeFx };
 }
 
 export type GameApi = ReturnType<typeof useGameConnection>;
@@ -162,6 +178,14 @@ export function useGame(): GameApi {
   const ctx = useContext(GameContext);
   if (!ctx) throw new Error('useGame außerhalb von GameContext');
   return ctx;
+}
+
+/** Reagiert auf Effekt-Ereignisse vom Server */
+export function useFx(handler: (fx: FxEvent) => void) {
+  const { subscribeFx } = useGame();
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => subscribeFx((fx) => ref.current(fx)), [subscribeFx]);
 }
 
 /** Aktuelle Serverzeit, regelmäßig aktualisiert */

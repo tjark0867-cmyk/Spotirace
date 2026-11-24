@@ -91,6 +91,29 @@ npm start
 4. Auf der Artist-Seite ein Album öffnen und auf einen **anderen Artist in einem Song** klicken → du springst zu ihm. Jeder Sprung = 1 Klick.
 5. Wer zuerst beim Ziel-Artist landet, gewinnt. Am Ende seht ihr den Weg aller Spieler.
 
+### Modus „Team-Staffel“
+
+- Zwei Teams (Grün und Pink) mit je 2 oder 3 Spielern. In der Lobby tippt jeder sein Team an, der Host kann „Teams mischen“.
+- Der Host wählt Start, Wechselpunkt(e) und Ziel: bei 2er-Teams A → B → C, bei 3er-Teams A → B → C → D.
+- Läufer 1 läuft von A nach B, dann gibt es die Stab-Übergabe und Läufer 2 startet automatisch bei B.
+- Die anderen schauen live zu (ohne eigene Spotify-Anfragen) und feuern mit Stickern an. Ist der Läufer 30 Sekunden offline, kann ein Teamkollege übernehmen.
+- Das Team, das zuerst am Ziel ist, gewinnt. Teamzeit = Summe der Etappen, das Ergebnis zeigt die Zwischenzeiten jeder Etappe.
+
+### Schalter „Sabotage (Power-ups)“ – geht in beiden Modi
+
+Nach jedem 2. Sprung öffnet sich eine Item-Kiste (höchstens 2 Items im Inventar). Angriffe haben 20 Sekunden Abklingzeit, gleiche Effekte stapeln nicht.
+
+| Item | Wirkung |
+|---|---|
+| Eiskristall | Gegner ist 10 s eingefroren (keine Klicks) |
+| Tintenklecks | Gegner sieht 15 s lang alle Cover und Bilder verschmiert |
+| Rückspulen | Gegner wird einen Artist zurückgesetzt |
+| Schild | Blockt den nächsten Angriff, hält 30 s |
+| Generalschlüssel | 15 s lang sind auch gesperrte Songs auswählbar |
+| Spickzettel | Zeigt 15 s Genres und 3 Album-Cover des Ziels (höchstens 1 Spotify-Abfrage pro Ziel und Runde) |
+
+In der Staffel kann man nur den aktiven Läufer des anderen Teams angreifen; übrige Items wandern mit dem Stab zum nächsten Läufer.
+
 ## 5. Gut zu wissen: Spotify-Einschränkungen
 
 Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spiel ist darauf ausgelegt:
@@ -117,7 +140,8 @@ Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spi
 ```
 server/
   index.ts          Startpunkt (HTTP + WebSocket)
-  game.ts           Lobbys, Countdown, Zugprüfung, Zeitlimit, Ergebnis
+  game.ts           Lobbys, Countdown, Zugprüfung, Zeitlimit, Ergebnis, Team-Staffel, Sabotage
+  game.test.ts      Tests für Teams, Übergaben, Items, Abklingzeiten (npm test)
   http.ts           API für Suche, Artist-Seiten, Alben
   cache.ts          Zwischenspeicher (Arbeitsspeicher + Key Value) + Begrenzung paralleler Anfragen
   kv.ts             Mini-Redis-Client ohne Zusatzpaket
@@ -127,6 +151,7 @@ server/
   music/missing.ts  Klare Fehlermeldung, wenn Keys fehlen
 shared/types.ts     Gemeinsame Typen für Server und Browser
 client/src/         React-Oberfläche (Tailwind CSS)
+client/src/components/art/  Selbst gezeichnete SVG-Grafiken (Items, Kiste, Wappen, Staffelstab, Sticker, Effekte)
 ```
 
 Technik: React 19, Vite, Tailwind CSS 4, Node.js mit `ws` für die Echtzeit-Verbindung.

@@ -64,7 +64,7 @@ export function App() {
           Verbindung verloren – verbinde neu …
         </div>
       )}
-      <Toasts toasts={toasts} raised={inGame} />
+      <Toasts toasts={toasts} raised={inGame ? (state?.settings.sabotage ? 2 : 1) : 0} />
     </GameContext.Provider>
   );
 }

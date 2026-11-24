@@ -8,6 +8,7 @@ import { MissingKeysProvider } from './music/missing';
 import { readMarket, readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
 import type { MusicProvider } from './music/types';
+import type { ItemKind } from '../shared/types';
 import { KvClient } from './kv';
 import { UsageCounter } from './usage';
 
@@ -92,7 +93,9 @@ const warm = (artistId: string) => {
 };
 
 // WebSocket für Lobby und Spiel
-const game = new GameServer(provider, warm, provider.name === 'spotify' ? usage : null);
+// Nur im Demo-Modus (für automatische Tests): feste Reihenfolge der Item-Kisten, z. B. DEMO_ITEMS=freeze,ink
+const itemSequence = provider.name === 'demo' && process.env.DEMO_ITEMS ? (process.env.DEMO_ITEMS.split(',').map((s) => s.trim()) as ItemKind[]) : undefined;
+const game = new GameServer(provider, warm, provider.name === 'spotify' ? usage : null, { itemSequence });
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 const alive = new WeakMap<WebSocket, boolean>();
 

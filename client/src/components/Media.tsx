@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ArtistSummary } from '../../../shared/types';
 import { seedColor } from '../lib/color';
+import { useInked } from '../lib/ink';
+import { InkSmear } from './art/Effects';
 import { MusicNoteIcon } from './Icons';
 
 /** Rundes Artist-Bild mit Initialen-Fallback */
@@ -15,6 +17,7 @@ export function ArtistImage({
 }) {
   // Kleine Avatare laden das kleinere Bild → viel weniger Daten
   const src = size <= 160 ? (artist.imageSmall ?? artist.image) : artist.image;
+  const inked = useInked();
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc !== null && failedSrc === src;
   const initials = artist.name
@@ -25,7 +28,7 @@ export function ArtistImage({
     .join('');
   return (
     <div
-      className={`relative shrink-0 overflow-hidden rounded-full ${className}`}
+      className={`relative shrink-0 overflow-hidden rounded-full ${inked ? 'inked' : ''} ${className}`}
       style={{ width: size, height: size, background: seedColor(artist.id) }}
     >
       {src && !failed ? (
@@ -43,6 +46,7 @@ export function ArtistImage({
           {initials}
         </span>
       )}
+      {inked && size >= 40 && <InkSmear seed={artist.id} />}
     </div>
   );
 }
@@ -63,8 +67,9 @@ export function Cover({
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc !== null && failedSrc === src;
+  const inked = useInked();
   return (
-    <div className={`relative aspect-square overflow-hidden bg-sp-highlight ${rounded} ${className}`}>
+    <div className={`relative aspect-square overflow-hidden bg-sp-highlight ${inked ? 'inked' : ''} ${rounded} ${className}`}>
       {src && !failed ? (
         <img
           src={src}
@@ -80,6 +85,7 @@ export function Cover({
           <MusicNoteIcon size={36} />
         </div>
       )}
+      {inked && <InkSmear seed={src ?? alt} />}
     </div>
   );
 }

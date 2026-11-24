@@ -28,11 +28,15 @@ interface Props {
   value: ArtistSummary | null;
   editable: boolean;
   excludeId?: string | null;
+  /** Weitere Artists, die „Zufällig“ nicht wählen soll (Staffel: alle Wechselpunkte) */
+  excludeIds?: Array<string | null | undefined>;
   onChange: (artist: ArtistSummary | null) => void;
-  accent: 'green' | 'pink';
+  accent: 'green' | 'pink' | 'gold';
+  /** Kleines Zeichen vor der Überschrift (z. B. A, B, C in der Staffel) */
+  badge?: string;
 }
 
-export function ArtistPicker({ label, hint, value, editable, excludeId, onChange, accent }: Props) {
+export function ArtistPicker({ label, hint, value, editable, excludeId, excludeIds = [], onChange, accent, badge }: Props) {
   const { toast } = useGame();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ArtistSummary[]>([]);
@@ -103,7 +107,7 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
   const random = async () => {
     setRandomLoading(true);
     try {
-      const exclude = [excludeId, value?.id].filter(Boolean) as string[];
+      const exclude = [excludeId, value?.id, ...excludeIds].filter(Boolean) as string[];
       pick(await api.randomArtist(exclude));
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -112,15 +116,19 @@ export function ArtistPicker({ label, hint, value, editable, excludeId, onChange
     }
   };
 
-  const accentText = accent === 'green' ? 'text-sp-green-bright' : 'text-[#f573a0]';
-  const accentRing = accent === 'green' ? 'ring-sp-green/60' : 'ring-[#f573a0]/60';
+  const accentText = accent === 'green' ? 'text-sp-green-bright' : accent === 'gold' ? 'text-[#ffc864]' : 'text-[#f573a0]';
+  const accentRing = accent === 'green' ? 'ring-sp-green/60' : accent === 'gold' ? 'ring-[#ffc864]/60' : 'ring-[#f573a0]/60';
+  const accentBg = accent === 'green' ? 'bg-sp-green-bright' : accent === 'gold' ? 'bg-[#ffc864]' : 'bg-[#f573a0]';
 
   return (
     <div className="rounded-lg bg-sp-card p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <div className={`text-xs font-bold uppercase tracking-widest ${accentText}`}>{label}</div>
-          <div className="text-sm text-sp-sub">{hint}</div>
+        <div className="flex min-w-0 items-center gap-3">
+          {badge && <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-black text-black ${accentBg}`}>{badge}</span>}
+          <div className="min-w-0">
+            <div className={`text-xs font-bold uppercase tracking-widest ${accentText}`}>{label}</div>
+            <div className="text-sm text-sp-sub">{hint}</div>
+          </div>
         </div>
         {editable && (
           <button
