@@ -98,6 +98,22 @@ export class TtlCache {
     return promise;
   }
 
+  /** Nur nachsehen (Speicher, dann Key Value) – lädt nie etwas neu */
+  async peek<T>(key: string, ttlMs: number): Promise<T | undefined> {
+    const cached = this.get<T>(key);
+    if (cached !== undefined) return cached;
+    if (!this.remote) return undefined;
+    try {
+      const buf = await this.remote.get(REMOTE_PREFIX + key);
+      if (!buf) return undefined;
+      const value = JSON.parse(brotliDecompressSync(buf).toString('utf8')) as T;
+      this.set(key, value, ttlMs);
+      return value;
+    } catch {
+      return undefined;
+    }
+  }
+
   get size() {
     return this.store.size;
   }

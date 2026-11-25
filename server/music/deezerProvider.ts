@@ -149,23 +149,46 @@ export class DeezerProvider implements MusicProvider {
   }
 
   /**
-   * Passender Spotify-Artist zu einem Deezer-Artist (gleicher Name). Kostet einmal 1 Spotify-Anfrage
-   * und bleibt 60 Tage gespeichert. Klappt Spotify gerade nicht (Kontingent), gibt es null → Deezer.
+   * Passender Spotify-Artist zu einem Deezer-Artist. Weil mehrere Artists gleich heißen können,
+   * wird über ein eigenes Album abgeglichen: gesucht wird das Album bei Spotify, genommen wird der
+   * Artist, der darauf steht (meist 1 Spotify-Anfrage, das Bild kommt kostenlos über oEmbed).
+   * Bleibt 60 Tage gespeichert. Kein sicherer Treffer → null (dann Deezer-Bild statt falschem Bild).
    */
   private async spotifyMatch(deezerId: string, name: string): Promise<ArtistSummary | null> {
     if (!this.spotify) return null;
-    const key = `dz:sp:${deezerId}`;
+    const spotify = this.spotify;
     try {
       const found = await this.cache.wrap(
-        key,
+        `dz:sp2:${deezerId}`,
         DAY,
-        async () => (await this.spotify!.matchArtist(name)) ?? { none: true },
+        async (): Promise<ArtistSummary | { none: true }> => {
+          const own = await this.ownReleases(deezerId).catch(() => [] as DzAlbumSimple[]);
+          const strip = (t: string) => t.replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, '').trim();
+          const titles: string[] = [];
+          for (const a of [...own.filter((x) => x.record_type === 'album'), ...own.filter((x) => x.record_type !== 'album')]) {
+            const t = strip(a.title);
+            if (t && !titles.some((x) => normName(x) === normName(t))) titles.push(t);
+            if (titles.length >= 2) break;
+          }
+          for (const title of titles) {
+            const spId = await spotify.findArtistByAlbum(name, title);
+            if (spId) return spotify.getArtist(spId);
+          }
+          return (await spotify.uniqueArtist(name)) ?? { none: true };
+        },
         KV_DAYS(60),
       );
       return 'none' in found ? null : found;
     } catch {
-      return null; // Fehler/Kontingent: nicht merken, nächstes Mal wieder probieren
+      return null; // Spotify-Pause oder Fehler: nicht merken, nächstes Mal wieder probieren
     }
+  }
+
+  /** Schon zugeordnetes Spotify-Bild nutzen, ohne neue Spotify-Anfrage */
+  private async withKnownSpotifyImage(a: ArtistSummary): Promise<ArtistSummary> {
+    const sp = await this.cache.peek<ArtistSummary | { none: true }>(`dz:sp2:${a.id}`, DAY);
+    if (!sp || 'none' in sp || !sp.image) return a;
+    return { ...a, image: sp.image, imageSmall: sp.imageSmall ?? sp.image, genres: sp.genres.length ? sp.genres : a.genres };
   }
 
   get cacheStats() {
@@ -246,14 +269,29 @@ export class DeezerProvider implements MusicProvider {
         i * 0.05
       );
     };
-    return hits
+    const list = hits
       .map((a, i) => ({ a, s: score(a, i) }))
       .sort((x, y) => y.s - x.s)
       .slice(0, 10)
       .map((x) => toArtist(x.a));
+    return Promise.all(list.map((a) => this.withKnownSpotifyImage(a)));
   }
 
+  /** Vorschläge mit Spotify-Bildern: einmalig im Hintergrund zuordnen (12 Anfragen, 60 Tage gespeichert) */
   async popularArtists(): Promise<PopularArtist[]> {
+    const base = await this.popularBase();
+    const withImages = await Promise.all(
+      base.map(async (p) => {
+        if (!p.artist) return p;
+        const a = await this.withKnownSpotifyImage(p.artist);
+        if (a === p.artist) void this.getArtist(p.artist.id).catch(() => {});
+        return { ...p, image: a.imageSmall ?? a.image, artist: a };
+      }),
+    );
+    return withImages;
+  }
+
+  private async popularBase(): Promise<PopularArtist[]> {
     return this.cache.wrap(
       'dz:popular:v1',
       12 * HOUR,

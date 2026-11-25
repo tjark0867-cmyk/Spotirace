@@ -105,7 +105,7 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
 
     if (parts[1] === 'search') {
       const q = (url.searchParams.get('q') ?? '').slice(0, 100);
-      return sendJson(req, res, 200, await provider.searchArtists(q), 300);
+      return sendJson(req, res, 200, await provider.searchArtists(q), 120);
     }
 
     if (parts[1] === 'popular') {
@@ -129,7 +129,7 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         const group = url.searchParams.get('group') as ReleaseGroup;
         if (!RELEASE_GROUPS.includes(group)) return sendJson(req, res, 400, { error: 'Ungültige Kategorie' });
         const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-        return sendJson(req, res, 200, await provider.getReleases(id, group, offset, provider.pageCount), 3600);
+        return sendJson(req, res, 200, await provider.getReleases(id, group, offset, provider.pageCount), 300);
       }
       const [artist, initial] = await Promise.all([
         provider.getArtist(id),
@@ -149,7 +149,7 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
         artist,
         sections: Object.fromEntries(pages.map((p) => [p.group, p])) as ArtistPage['sections'],
       };
-      return sendJson(req, res, 200, body, 3600);
+      return sendJson(req, res, 200, body, 120);
     }
 
     if (parts[1] === 'album' && parts[2] && ID_RE.test(parts[2])) {

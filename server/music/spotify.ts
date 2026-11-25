@@ -444,10 +444,35 @@ export class SpotifyProvider implements MusicProvider {
     );
   }
 
-  /** Nur ein exakter Namenstreffer zählt (für das Zuordnen von Deezer-Artists) – kostet 1 Anfrage, dann gespeichert */
-  async matchArtist(name: string): Promise<ArtistSummary | null> {
+  /**
+   * Spotify-ID eines Artists über eines seiner Alben finden (1 Anfrage). Eindeutig, auch wenn
+   * mehrere Artists gleich heißen: Es zählt der Artist, der auf genau diesem Album steht.
+   */
+  async findArtistByAlbum(artistName: string, albumTitle: string): Promise<string | null> {
+    const clean = (t: string) => t.replace(/"/g, '').trim();
+    const q = `album:"${clean(albumTitle)}" artist:"${clean(artistName)}"`;
+    const id = await this.cache.wrap(
+      `albumsearch:${q.toLowerCase()}`,
+      HOUR,
+      async () => {
+        const json = await this.request<{ albums?: SpPaging<SpAlbumSimple> }>(`/search?q=${encodeURIComponent(q)}&type=album&limit=10`);
+        const nn = normName(artistName);
+        for (const album of json.albums?.items ?? []) {
+          const hit = album?.artists?.find((a) => normName(a.name) === nn);
+          if (hit) return hit.id;
+        }
+        return '';
+      },
+      KV_DAYS(30),
+    );
+    return id || null;
+  }
+
+  /** Namenssuche – nur wenn es genau EINEN Artist mit diesem Namen gibt (sonst lieber kein Bild als ein falsches) */
+  async uniqueArtist(name: string): Promise<ArtistSummary | null> {
     const hits = await this.rawSearch(name);
-    return hits.find((a) => normName(a.name) === normName(name)) ?? null;
+    const exact = hits.filter((a) => normName(a.name) === normName(name));
+    return exact.length === 1 ? exact[0] : null;
   }
 
   async resolveArtist(name: string): Promise<ArtistSummary> {
