@@ -116,7 +116,7 @@ In der Staffel kann man nur den aktiven Läufer des anderen Teams angreifen; üb
 
 ## 5. Gut zu wissen: Datenquelle
 
-Die Musikdaten (Artists, Bilder, Alben, Songs) kommen von der **Deezer-API** – ohne Key und ohne Tageskontingent. Die Oberfläche sieht genauso aus wie vorher; „Auf Spotify öffnen“ springt zur Spotify-Suche. Wer doch wieder Spotify will, setzt bei Render `MUSIC_SOURCE=spotify` (dann gelten die Einschränkungen unten).
+Die Musikdaten (Artists, Alben, Songs) kommen von der **Deezer-API** – ohne Key und ohne Tageskontingent. Sind die Spotify-Keys eingetragen, kommen **Profilbilder und „Erscheint auf“ von Spotify** (ca. 2 Spotify-Anfragen pro neuem Artist, danach gespeichert). Ist das Spotify-Kontingent aufgebraucht, übernimmt automatisch Deezer. Die Oberfläche sieht genauso aus wie vorher; „Auf Spotify öffnen“ springt zur Spotify-Suche. Wer doch wieder Spotify will, setzt bei Render `MUSIC_SOURCE=spotify` (dann gelten die Einschränkungen unten).
 
 ### Spotify-Einschränkungen (nur mit MUSIC_SOURCE=spotify)
 

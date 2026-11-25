@@ -42,6 +42,7 @@ if (kv) {
 const usage = new UsageCounter(kv);
 
 let provider: MusicProvider;
+let spotifyHelper: SpotifyProvider | null = null;
 let recheckLogin = () => {};
 let cooldown = () => 0;
 if (useSpotify) for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
@@ -49,8 +50,11 @@ if (forceDemo) {
   provider = new DemoProvider();
   console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
 } else if (!useSpotify) {
-  provider = new DeezerProvider({ remote: kv });
-  console.log('🎧 Musikdaten: Deezer (ohne Key, ohne Tageskontingent)');
+  // Alles von Deezer; mit Spotify-Keys zusätzlich Profilbilder und „Erscheint auf“ von Spotify
+  const helper = clientId && clientSecret ? new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage }) : null;
+  spotifyHelper = helper;
+  provider = new DeezerProvider({ remote: kv, spotify: helper });
+  console.log(`🎧 Musikdaten: Deezer${helper ? ' + Spotify (Profilbilder, Erscheint auf)' : ' (ohne Key, ohne Tageskontingent)'}`);
 } else if (clientId && clientSecret) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
   provider = spotify;
@@ -86,7 +90,7 @@ const handler = createHttpHandler(provider, async () => {
     missingKeys: provider.name === 'missing' || (provider.name === 'spotify' && setup.login === 'failed'),
     setup: provider.name === 'spotify' || provider.name === 'missing' ? setup : null,
     cooldownSeconds: cooldown(),
-    usage: provider.name === 'spotify' ? await usage.info() : null,
+    usage: provider.name === 'spotify' || spotifyHelper ? await usage.info() : null,
   };
 });
 const server = createServer((req, res) => void handler(req, res));
@@ -101,7 +105,7 @@ const warm = (artistId: string) => {
 // WebSocket für Lobby und Spiel
 // Nur im Demo-Modus (für automatische Tests): feste Reihenfolge der Item-Kisten, z. B. DEMO_ITEMS=freeze,ink
 const itemSequence = provider.name === 'demo' && process.env.DEMO_ITEMS ? (process.env.DEMO_ITEMS.split(',').map((s) => s.trim()) as ItemKind[]) : undefined;
-const game = new GameServer(provider, warm, provider.name === 'spotify' ? usage : null, { itemSequence });
+const game = new GameServer(provider, warm, provider.name === 'spotify' || spotifyHelper ? usage : null, { itemSequence });
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 const alive = new WeakMap<WebSocket, boolean>();
 

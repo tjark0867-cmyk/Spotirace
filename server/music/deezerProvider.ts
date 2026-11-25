@@ -3,6 +3,7 @@ import { TtlCache, type RemoteStore } from '../cache';
 import { normName } from './deezer';
 import { RANDOM_ARTIST_NAMES } from './randomArtists';
 import { ProviderError, type MusicProvider } from './types';
+import type { SpotifyProvider } from './spotify';
 
 /**
  * Musikdaten von Deezer – ohne Key und ohne Tageskontingent (nur max. 50 Anfragen pro 5 Sekunden).
@@ -139,8 +140,32 @@ export class DeezerProvider implements MusicProvider {
   private cache: TtlCache;
   private gate = new RateGate(40, 5000);
 
-  constructor(opts: { remote?: RemoteStore | null } = {}) {
+  /** Optional: Spotify nur für Profilbild und „Erscheint auf“ (sonst alles Deezer) */
+  private spotify: SpotifyProvider | null;
+
+  constructor(opts: { remote?: RemoteStore | null; spotify?: SpotifyProvider | null } = {}) {
     this.cache = new TtlCache(8000, opts.remote ?? null);
+    this.spotify = opts.spotify ?? null;
+  }
+
+  /**
+   * Passender Spotify-Artist zu einem Deezer-Artist (gleicher Name). Kostet einmal 1 Spotify-Anfrage
+   * und bleibt 60 Tage gespeichert. Klappt Spotify gerade nicht (Kontingent), gibt es null → Deezer.
+   */
+  private async spotifyMatch(deezerId: string, name: string): Promise<ArtistSummary | null> {
+    if (!this.spotify) return null;
+    const key = `dz:sp:${deezerId}`;
+    try {
+      const found = await this.cache.wrap(
+        key,
+        DAY,
+        async () => (await this.spotify!.matchArtist(name)) ?? { none: true },
+        KV_DAYS(60),
+      );
+      return 'none' in found ? null : found;
+    } catch {
+      return null; // Fehler/Kontingent: nicht merken, nächstes Mal wieder probieren
+    }
   }
 
   get cacheStats() {
@@ -262,8 +287,79 @@ export class DeezerProvider implements MusicProvider {
 
   // ---------- Artist & Diskografie ----------
 
-  async getArtist(id: string): Promise<ArtistSummary> {
+  private deezerArtist(id: string): Promise<ArtistSummary> {
     return this.cache.wrap(`dz:artist:${id}`, DAY, async () => toArtist(await this.request<DzArtist>(`/artist/${encodeURIComponent(id)}`)), KV_DAYS(14));
+  }
+
+  /** Artist von Deezer, Profilbild (und Genres) von Spotify, falls verfügbar */
+  async getArtist(id: string): Promise<ArtistSummary> {
+    const artist = await this.deezerArtist(id);
+    const sp = await this.spotifyMatch(id, artist.name);
+    if (!sp) return artist;
+    return {
+      ...artist,
+      image: sp.image ?? artist.image,
+      imageSmall: sp.imageSmall ?? sp.image ?? artist.imageSmall,
+      genres: sp.genres.length ? sp.genres : artist.genres,
+    };
+  }
+
+  /** Spotify-Album → dasselbe Album bei Deezer (zum Öffnen der Songs). Kein Spotify-Kontingent. */
+  private deezerAlbumFor(title: string, artist: string): Promise<DzAlbum | null> {
+    const clean = (t: string) => normName(t.replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, ''));
+    return this.cache.wrap(
+      `dz:map:${normName(artist)}:${normName(title)}`,
+      DAY,
+      async () => {
+        const pick = (list: DzAlbum[]) =>
+          list.find((a) => normName(a.title) === normName(title) && normName(a.artist?.name ?? '') === normName(artist)) ??
+          list.find((a) => clean(a.title) === clean(title) && normName(a.artist?.name ?? '') === normName(artist)) ??
+          list.find((a) => clean(a.title) === clean(title)) ??
+          null;
+        const exact = await this.request<DzList<DzAlbum>>(`/search/album?q=${encodeURIComponent(`artist:"${artist}" album:"${title}"`)}&limit=10`).catch(
+          () => ({ data: [] }) as DzList<DzAlbum>,
+        );
+        let hit = pick(exact.data ?? []);
+        if (!hit) {
+          const loose = await this.request<DzList<DzAlbum>>(`/search/album?q=${encodeURIComponent(`${artist} ${title}`)}&limit=15`).catch(
+            () => ({ data: [] }) as DzList<DzAlbum>,
+          );
+          hit = pick(loose.data ?? []);
+        }
+        return hit ?? { none: true };
+      },
+      KV_DAYS(60),
+    ).then((r) => ('none' in r ? null : (r as DzAlbum)));
+  }
+
+  /**
+   * „Erscheint auf“ von Spotify (1 Anfrage pro Seite): Namen, Cover und Jahr bleiben von Spotify,
+   * die ID zeigt auf dasselbe Album bei Deezer, damit die Songs von dort kommen.
+   * null → Spotify gerade nicht verfügbar, dann nimmt die App die Deezer-Liste.
+   */
+  private async spotifyAppearsOn(artistId: string, offset: number): Promise<ReleasePage | null> {
+    if (!this.spotify) return null;
+    const artist = await this.deezerArtist(artistId);
+    const sp = await this.spotifyMatch(artistId, artist.name);
+    if (!sp) return null;
+    let page: ReleasePage;
+    try {
+      page = await this.spotify.getReleases(sp.id, 'appears_on', offset, this.spotify.pageCount);
+    } catch {
+      return null;
+    }
+    const mapped = await Promise.all(
+      page.items.map(async (r) => {
+        const owner = r.artists[0]?.name ?? '';
+        const dz = await this.deezerAlbumFor(r.name, owner).catch(() => null);
+        if (!dz) return null;
+        // Album-Künstler mit Deezer-IDs, damit Klicks im Album passen
+        const artists = dz.artist ? [ref(dz.artist)] : r.artists;
+        return { ...r, id: String(dz.id), artists } satisfies ReleaseSummary;
+      }),
+    );
+    const items = mapped.filter((r): r is ReleaseSummary => !!r);
+    return { group: 'appears_on', items, total: Math.max(page.total - (page.items.length - items.length), items.length + offset), offset, next: page.next };
   }
 
   /** Albumkopf (Künstler, Jahr, Typ, Songzahl) – wird auch beim Öffnen des Albums wiederverwendet */
@@ -301,7 +397,7 @@ export class DeezerProvider implements MusicProvider {
       DAY,
       async () => {
         const [artist, own, top] = await Promise.all([
-          this.getArtist(artistId),
+          this.deezerArtist(artistId),
           this.ownReleases(artistId),
           this.request<DzList<DzTrack>>(`/artist/${encodeURIComponent(artistId)}/top?limit=100`).catch(() => ({ data: [] }) as DzList<DzTrack>),
         ]);
@@ -344,18 +440,22 @@ export class DeezerProvider implements MusicProvider {
 
   private async groupList(artistId: string, group: ReleaseGroup): Promise<ReleaseSummary[]> {
     if (group === 'appears_on') return this.appearsOn(artistId);
-    const [artist, own] = await Promise.all([this.getArtist(artistId), this.ownReleases(artistId)]);
+    const [artist, own] = await Promise.all([this.deezerArtist(artistId), this.ownReleases(artistId)]);
     const me: ArtistRef[] = [{ id: artist.id, name: artist.name }];
     return own.filter((a) => typeOf(a.record_type).group === group).map((a) => toRelease(a, me));
   }
 
   async getReleases(artistId: string, group: ReleaseGroup, offset: number, count: number): Promise<ReleasePage> {
+    if (group === 'appears_on') {
+      const sp = await this.spotifyAppearsOn(artistId, offset);
+      if (sp) return sp;
+    }
     return this.page(group, await this.groupList(artistId, group), offset, count);
   }
 
   async getInitialSections(artistId: string): Promise<{ album: ReleasePage; appears_on: ReleasePage }> {
-    const [album, appears] = await Promise.all([this.groupList(artistId, 'album'), this.groupList(artistId, 'appears_on')]);
-    return { album: this.page('album', album, 0, this.pageCount), appears_on: this.page('appears_on', appears, 0, this.pageCount) };
+    const [album, appears] = await Promise.all([this.groupList(artistId, 'album'), this.getReleases(artistId, 'appears_on', 0, this.pageCount)]);
+    return { album: this.page('album', album, 0, this.pageCount), appears_on: appears };
   }
 
   // ---------- Album mit allen Mitwirkenden pro Song ----------

@@ -444,6 +444,12 @@ export class SpotifyProvider implements MusicProvider {
     );
   }
 
+  /** Nur ein exakter Namenstreffer zählt (für das Zuordnen von Deezer-Artists) – kostet 1 Anfrage, dann gespeichert */
+  async matchArtist(name: string): Promise<ArtistSummary | null> {
+    const hits = await this.rawSearch(name);
+    return hits.find((a) => normName(a.name) === normName(name)) ?? null;
+  }
+
   async resolveArtist(name: string): Promise<ArtistSummary> {
     const hits = await this.rawSearch(name);
     const hit = hits.find((a) => normName(a.name) === normName(name)) ?? hits[0];
