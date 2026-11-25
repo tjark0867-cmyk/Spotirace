@@ -98,6 +98,11 @@ export class TtlCache {
     return promise;
   }
 
+  /** Wird dieser Eintrag gerade geladen? */
+  pending(key: string): boolean {
+    return this.inflight.has(key);
+  }
+
   /** Direkt ablegen (Speicher + optional Key Value) */
   put(key: string, value: unknown, ttlMs: number, remoteTtlSeconds = 0) {
     this.set(key, value, ttlMs);

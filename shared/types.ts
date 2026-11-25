@@ -73,6 +73,8 @@ export interface TrackInfo {
   durationMs: number;
   explicit: boolean;
   artists: ArtistRef[];
+  /** Gäste dieses Songs werden noch geladen (nur bei partial) */
+  loading?: boolean;
 }
 
 export interface AlbumDetail {
@@ -86,6 +88,8 @@ export interface AlbumDetail {
   artists: ArtistRef[];
   tracks: TrackInfo[];
   url: string | null;
+  /** Zwischenstand: Songs/Features laden noch – der Browser fragt gleich nochmal nach */
+  partial?: boolean;
 }
 
 // ---------- Spiel ----------

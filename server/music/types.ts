@@ -32,6 +32,10 @@ export interface MusicProvider {
   resolveTrackArtist?(albumId: string, trackId: string, artistId: string): Promise<string | null>;
   /** Optional: Quelle einer ID (Start und Ziel müssen aus derselben Quelle stammen) */
   idSource?(id: string): string;
+  /** Optional: Album für die App – nach `waitMs` notfalls als Zwischenstand (partial) */
+  albumNow?(id: string, waitMs: number): Promise<AlbumDetail>;
+  /** Optional: Ladezeiten & Warteschlange für /api/debug */
+  readonly debug?: unknown;
 }
 
 export class ProviderError extends Error {

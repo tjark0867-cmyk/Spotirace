@@ -127,6 +127,15 @@ export class UsageCounter {
     this.kv?.set(K_LIMIT, JSON.stringify(this.lastLimit), 60 * 24 * 3600).catch(() => {});
   }
 
+  /**
+   * Darf Spotify gerade zusätzlich einspringen (z. B. wenn Deezer voll ist)?
+   * Nur solange in den letzten 24 Std. weniger als die Hälfte des zuletzt erreichten Limits verbraucht ist.
+   */
+  spareRoom(): boolean {
+    const cap = this.lastLimit?.count ?? 260;
+    return this.last24 < cap * 0.5;
+  }
+
   /** Zählerstand für die Rundenmessung (wächst nur) */
   get total(): number {
     return this.sinceStart;

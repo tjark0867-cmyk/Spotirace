@@ -18,10 +18,27 @@ function useAlbum(albumId: string) {
     let cancelled = false;
     setData(null);
     setError(null);
-    api
-      .album(albumId)
-      .then((d) => !cancelled && setData(d))
-      .catch((e: Error) => !cancelled && setError(e.message));
+    // Kommt erst ein Zwischenstand (Songs da, Features laden noch), so lange nachfragen, bis alles da ist
+    (async () => {
+      let poll = false;
+      let fails = 0;
+      for (;;) {
+        let d: AlbumDetail;
+        try {
+          d = await api.album(albumId, poll);
+        } catch (e) {
+          if (!poll || ++fails > 3) throw e;
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        if (cancelled) return;
+        setData(d);
+        if (!d.partial) return;
+        poll = true;
+        await new Promise((r) => setTimeout(r, 120));
+        if (cancelled) return;
+      }
+    })().catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
@@ -48,10 +65,13 @@ function TrackRow({
   goalLabel: string;
 }) {
   const { move, pendingMove } = useGame();
+  // Gäste laden noch: Song neutral zeigen (weder gesperrt noch frei), bis klar ist, wer drauf ist
+  const loading = !!track.loading;
   const withCurrent = track.artists.some((a) => a.id === current.id);
   const playable = withCurrent || unlocked;
   const jumpable = playable && track.artists.some((a) => a.id !== current.id);
   const hasTarget = !!targetId && track.artists.some((a) => a.id === targetId);
+  const neutral = loading && !playable && !hasTarget;
 
   const rowStyle = hasTarget
     ? playable
@@ -61,20 +81,22 @@ function TrackRow({
       ? 'key-glow hover:bg-[#ffd23f]/10'
       : playable
         ? 'hover:bg-white/[0.08]'
-        : 'opacity-40';
+        : neutral
+          ? ''
+          : 'opacity-40';
 
   return (
     <div
       id={`track-${track.id}`}
       className={`group grid scroll-mt-24 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-4 rounded-md px-3 py-2 transition sm:px-4 ${rowStyle}`}
-      title={playable ? undefined : `${current.name} ist auf diesem Song nicht dabei`}
-      onClick={playable ? undefined : () => sound.play('denied')}
+      title={playable || neutral ? undefined : `${current.name} ist auf diesem Song nicht dabei`}
+      onClick={playable || neutral ? undefined : () => sound.play('denied')}
     >
       <div className="text-right text-base tabular-nums text-sp-sub">
-        {unlocked ? <MasterKey size={22} className="-mr-1 ml-auto" /> : playable ? track.number : <LockIcon size={14} className="ml-auto" />}
+        {unlocked ? <MasterKey size={22} className="-mr-1 ml-auto" /> : playable || neutral ? track.number : <LockIcon size={14} className="ml-auto" />}
       </div>
       <div className="min-w-0">
-        <div className={`truncate text-base ${playable ? 'text-white' : 'text-sp-sub'}`}>{track.name}</div>
+        <div className={`truncate text-base ${playable || neutral ? 'text-white' : 'text-sp-sub'}`}>{track.name}</div>
         <div className="min-w-0 text-sm leading-6 text-sp-sub">
           {track.explicit && (
             <span className="mr-1.5 inline-grid h-4 min-w-4 place-items-center rounded-[2px] bg-sp-sub px-1 align-[-2px] text-[10px] font-bold text-black">E</span>
@@ -126,6 +148,7 @@ function TrackRow({
               </Fragment>
             );
           })}
+          {loading && <span className="skeleton ml-2 inline-block h-3 w-16 rounded-full align-[-1px]" aria-label="Features laden" />}
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -169,6 +192,9 @@ export function AlbumView({
 }) {
   const goalLabel = goalKind === 'checkpoint' ? 'Wechsel' : 'Ziel';
   const { data: raw, error, reload } = useAlbum(albumId);
+  // Zwischenstand: Hinweise erst zeigen, wenn alle Features da sind (sonst falsche „gesperrt“-Zahlen)
+  const complete = !!raw && !raw.partial;
+  const hasTracks = !!raw && raw.tracks.length > 0;
   // Songlisten von Deezer: aktuellen Artist und Ziel über den Namen erkennen (wie der Server)
   const data = useMemo(() => (raw ? applyKnownArtists(raw, [current, target]) : null), [raw, current, target]);
   const color = useDominantColor(data?.cover, albumId);
@@ -249,8 +275,11 @@ export function AlbumView({
                   ))}
                 </span>
                 {data.year && <span>• {data.year}</span>}
-                <span>• {plural(data.tracks.length, 'Song', 'Songs')},</span>
-                <span className="text-white/60">{formatAlbumLength(totalMs)}</span>
+                <span>
+                  • {plural(data.tracks.length || data.totalTracks, 'Song', 'Songs')}
+                  {totalMs > 0 && ','}
+                </span>
+                {totalMs > 0 && <span className="text-white/60">{formatAlbumLength(totalMs)}</span>}
               </div>
             )}
           </div>
@@ -258,7 +287,7 @@ export function AlbumView({
       </header>
 
       <div className="px-2 pb-10 sm:px-5" style={{ background: `linear-gradient(to bottom, color-mix(in srgb, ${color} 38%, transparent) 0, transparent 240px)` }}>
-        {data && target && targetTracks.length > 0 && (
+        {data && complete && target && targetTracks.length > 0 && (
           <div className="px-2 pt-6 sm:px-3">
             {reachable.length > 0 && canMove ? (
               <div className="flex animate-fade-up flex-col gap-3 rounded-lg bg-gradient-to-r from-[#f573a0] to-[#c2408a] p-4 text-black shadow-[0_8px_30px_rgba(245,115,160,.35)] sm:flex-row sm:items-center">
@@ -295,7 +324,16 @@ export function AlbumView({
           </div>
         )}
 
-        {data && (
+        {data && !complete && (
+          <div className="px-2 pb-2 pt-6 sm:px-3">
+            <div className="flex items-center gap-3 rounded-lg bg-white/[0.06] p-4 text-sm text-sp-sub">
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-sp-green" />
+              {hasTracks ? 'Features werden geladen …' : 'Songs werden geladen …'}
+            </div>
+          </div>
+        )}
+
+        {data && complete && (
           <div className="px-2 pb-2 pt-6 sm:px-3">
             {unlockAll && !isOwn ? (
               <div className="flex items-center gap-3 rounded-lg bg-[#ffd23f]/10 p-4 ring-1 ring-[#ffd23f]/40">
@@ -329,8 +367,8 @@ export function AlbumView({
         </div>
 
         <div className="mt-2">
-          {!data &&
-            Array.from({ length: 8 }, (_, i) => (
+          {!hasTracks &&
+            Array.from({ length: Math.min(raw?.totalTracks || 8, 12) }, (_, i) => (
               <div key={i} className="flex items-center gap-4 px-4 py-3">
                 <div className="skeleton h-4 w-4 rounded" />
                 <div className="flex-1">
@@ -361,7 +399,7 @@ export function AlbumView({
             ))}
         </div>
 
-        {data && (
+        {data && complete && (
           <footer className="mt-10 border-t border-white/10 px-2 pt-6 text-xs text-sp-muted sm:px-3">
             {demo ? (
               'Demo-Daten · erfundene Artists'

@@ -60,7 +60,7 @@ if (forceDemo) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
   spotifyHelper = spotify;
   cooldown = () => spotify.cooldownSeconds;
-  provider = new MixedProvider(spotify, new DeezerProvider({ remote: kv }), kv);
+  provider = new MixedProvider(spotify, new DeezerProvider({ remote: kv }), kv, () => usage.spareRoom());
   console.log('🎧 Musikdaten: Spotify, Songlisten von Deezer (spart Kontingent)');
 } else if (clientId && clientSecret) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });

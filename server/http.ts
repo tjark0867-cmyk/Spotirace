@@ -153,8 +153,13 @@ export function createHttpHandler(provider: MusicProvider, getConfig: () => AppC
     }
 
     if (parts[1] === 'album' && parts[2] && ID_RE.test(parts[2])) {
-      return sendJson(req, res, 200, await provider.getAlbum(parts[2]), 3600);
+      // Erste Anfrage wartet kurz aufs fertige Album; danach fragt die App nach (?poll), bis alle Features da sind
+      const poll = url.searchParams.has('poll');
+      const album = provider.albumNow ? await provider.albumNow(parts[2], poll ? 1500 : 450) : await provider.getAlbum(parts[2]);
+      return sendJson(req, res, 200, album, album.partial ? 0 : 3600);
     }
+
+    if (parts[1] === 'debug') return sendJson(req, res, 200, provider.debug ?? {});
 
     sendJson(req, res, 404, { error: 'Nicht gefunden' });
   }

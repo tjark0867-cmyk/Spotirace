@@ -118,6 +118,12 @@ In der Staffel kann man nur den aktiven Läufer des anderen Teams angreifen; üb
 
 **Spotify zuerst, Songlisten von Deezer:** Suche, Artist-Bilder, Diskografie und „Erscheint auf“ kommen wie gewohnt von Spotify. Nur die Songliste eines geöffneten Albums kommt unsichtbar von Deezer – das war früher der größte Teil der Spotify-Anfragen. Findet die App das Album bei Deezer nicht sicher (oder fehlt dort ein Mitwirkender), lädt sie es wie früher von Spotify. Klickt man auf einen Gast, den nur Deezer kannte, holt der Server einmal das echte Spotify-Album und nimmt dessen Spotify-ID.
 
+**Ladezeiten:** Deezer erlaubt nur ca. 40 Anfragen pro 5 Sekunden (für alle Spieler zusammen) und braucht pro Song eine Anfrage, um die Features zu kennen. Deshalb:
+- Ein Album erscheint sofort mit seiner Songliste, die Features laden in Sekundenbruchteilen nach („Features werden geladen …“).
+- Sobald eine Artist-Seite offen ist, sucht der Server deren Alben bei Deezer schon mal heraus (nur mit freien Plätzen – ein Klick hat immer Vorrang).
+- Alben mit mehr als 24 Songs und Alben, die gerade nicht auf die volle Deezer-Leitung passen (z. B. mehrere Spieler gleichzeitig), kommen mit **1** Spotify-Anfrage – aber nur, solange in den letzten 24 Std. weniger als die Hälfte des zuletzt erreichten Spotify-Limits verbraucht ist.
+- `/api/debug` zeigt die letzten Album-Ladezeiten und den Zustand der Deezer-Warteschlange.
+
 Ist das Spotify-Kontingent aufgebraucht, laufen neue Runden automatisch komplett mit Deezer (ohne Key, ohne Limit).
 
 - `MUSIC_SOURCE=deezer` → nur Deezer

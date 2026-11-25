@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AlbumDetail, ArtistRef, ArtistSummary, PopularArtist, ReleaseGroup, ReleasePage, ReleaseSummary, TrackInfo } from '../../shared/types';
 import { TtlCache, type RemoteStore } from '../cache';
 import { normName } from './deezer';
@@ -109,27 +110,80 @@ const FEAT_HINT = /\b(feat\.?|ft\.?|featuring|with)\b|&|\sx\s/i;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Höchstens `max` Anfragen pro `windowMs` (Deezer erlaubt 50 pro 5 Sekunden) */
+/**
+ * Spur einer Anfrage: Vorladen läuft „low“ und bekommt nur freie Plätze.
+ * Öffnet jemand genau dieses Album, wird die Spur auf „dringend“ umgestellt (low = false).
+ */
+export interface Lane {
+  low: boolean;
+  /** Noch erwartete Anfragen dieses Albums (für die "Deezer voll?"-Schätzung) */
+  reserved?: number;
+}
+const laneStore = new AsyncLocalStorage<Lane>();
+
 class RateGate {
   private stamps: number[] = [];
-  private chain = Promise.resolve();
+  private waiting: Array<{ lane: Lane | undefined; go: () => void }> = [];
+  private timer: NodeJS.Timeout | null = null;
   constructor(
     private max: number,
     private windowMs: number,
+    /** Vorladen darf höchstens so viele Plätze im Fenster belegen – der Rest bleibt für Klicks frei */
+    private lowMax: number,
   ) {}
+
   take(): Promise<void> {
-    const next = this.chain.then(async () => {
-      for (;;) {
-        const now = Date.now();
-        this.stamps = this.stamps.filter((t) => now - t < this.windowMs);
-        if (this.stamps.length < this.max) {
-          this.stamps.push(now);
-          return;
-        }
-        await sleep(this.windowMs - (now - this.stamps[0]) + 5);
-      }
+    return new Promise((go) => {
+      this.waiting.push({ lane: laneStore.getStore(), go });
+      this.pump();
     });
-    this.chain = next.catch(() => {});
-    return next;
+  }
+
+  /** Freie Plätze für dringende Anfragen (Fenster minus Wartende) */
+  get free(): number {
+    const now = Date.now();
+    const used = this.stamps.filter((t) => now - t < this.windowMs).length;
+    return this.max - used - this.waiting.filter((w) => !w.lane?.low).length;
+  }
+
+  get info() {
+    const now = Date.now();
+    return {
+      window: this.stamps.filter((t) => now - t < this.windowMs).length,
+      waiting: this.waiting.filter((w) => !w.lane?.low).length,
+      waitingLow: this.waiting.filter((w) => w.lane?.low).length,
+    };
+  }
+
+  pump() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    for (;;) {
+      if (this.waiting.length === 0) return;
+      const now = Date.now();
+      this.stamps = this.stamps.filter((t) => now - t < this.windowMs);
+      const urgent = this.waiting.findIndex((w) => !w.lane?.low);
+      let pick = -1;
+      if (urgent !== -1) {
+        if (this.stamps.length < this.max) pick = urgent;
+      } else if (this.stamps.length < this.lowMax) {
+        pick = 0;
+      }
+      if (pick === -1) {
+        const wait = this.stamps.length > 0 ? this.windowMs - (now - this.stamps[0]) + 5 : 20;
+        this.timer = setTimeout(() => {
+          this.timer = null;
+          this.pump();
+        }, Math.max(5, wait));
+        return;
+      }
+      const [w] = this.waiting.splice(pick, 1);
+      this.stamps.push(now);
+      if (w.lane?.reserved) w.lane.reserved--;
+      w.go();
+    }
   }
 }
 
@@ -138,7 +192,47 @@ export class DeezerProvider implements MusicProvider {
   /** Alle Releases einer Kategorie kommen aus einer gespeicherten Liste – so viele zeigen wir pro Klick */
   readonly pageCount = 20;
   private cache: TtlCache;
-  private gate = new RateGate(40, 5000);
+  // 5,3 statt 5 Sek.: Deezer zählt bei Ankunft, wir beim Absenden – kleiner Sicherheitsabstand
+  private gate = new RateGate(40, 5300, 8);
+  /** Für /api/debug: wie oft Deezer „zu viele Anfragen“ gemeldet hat */
+  private rateErrors = 0;
+  /** Alben, deren Songs gerade geladen werden – für den Zwischenstand */
+  private progress = new Map<string, { meta: DzAlbum; tracks: DzTrack[]; details: Map<number, DzRef[]> }>();
+
+  /** fn läuft in dieser Spur (Vorladen = low) */
+  inLane<T>(lane: Lane, fn: () => Promise<T>): Promise<T> {
+    return laneStore.run(lane, fn);
+  }
+
+  /** Laufende Album-Ladungen mit ihren noch erwarteten Anfragen */
+  private active = new Set<Lane>();
+
+  /** Ein Album dringend laden und dabei seine Anfragen vormerken */
+  async reserveRun<T>(needed: number, fn: () => Promise<T>): Promise<T> {
+    const lane: Lane = { low: false, reserved: needed };
+    this.active.add(lane);
+    try {
+      return await laneStore.run(lane, fn);
+    } finally {
+      this.active.delete(lane);
+    }
+  }
+
+  /** Müssten `needed` Anfragen jetzt auf freie Plätze warten (Deezer gerade voll)? */
+  congested(needed: number): boolean {
+    let planned = 0;
+    for (const l of this.active) planned += l.reserved ?? 0;
+    return this.gate.free - planned < needed;
+  }
+
+  /** Nach dem Umstellen einer Spur sofort neu verteilen */
+  wake() {
+    this.gate.pump();
+  }
+
+  get debug() {
+    return { ...this.gate.info, rateErrors: this.rateErrors };
+  }
 
   /** Optional: Spotify nur für Profilbild und „Erscheint auf“ (sonst alles Deezer) */
   private spotify: SpotifyProvider | null;
@@ -217,7 +311,9 @@ export class DeezerProvider implements MusicProvider {
       const code = json.error.code;
       // 4 = zu viele Anfragen in 5 Sekunden → kurz warten
       if (code === 4 && attempt < 3) {
-        await sleep(5200);
+        // Deezer zählt in einem gleitenden Fenster – meist ist nach 1–3 s wieder Platz
+        this.rateErrors++;
+        await sleep([1500, 3000, 5200][attempt]);
         return this.request<T>(path, attempt + 1);
       }
       if (code === 800 || code === 801 || code === 803) throw new ProviderError(404, 'Nicht gefunden');
@@ -518,44 +614,89 @@ export class DeezerProvider implements MusicProvider {
       `dz:album2:${id}`,
       DAY,
       async () => {
-        const [meta, tracks] = await Promise.all([this.albumMeta(id), this.list<DzTrack>(`/album/${encodeURIComponent(id)}/tracks`, 500)]);
-        const main = albumArtists(meta);
+        const [meta, tracks] = await Promise.all([this.albumMeta(id), this.albumTracks(id)]);
         // Gäste stehen bei Deezer nur in den Song-Details → für JEDEN Song nachladen (sonst fehlen Features).
         // Klappt ein Song nicht, wird das Album nicht gespeichert (lieber beim nächsten Mal nochmal).
-        const detailed = await Promise.all(
-          tracks.map(async (t) => {
-            const full = await this.cache.wrap(`dz:track:${t.id}`, DAY, () => this.request<DzTrack>(`/track/${t.id}`), KV_DAYS(180));
-            return { ...t, contributors: full.contributors?.length ? full.contributors : t.contributors };
-          }),
-        );
-        const info: TrackInfo[] = detailed.map((t, i) => {
-          const people = (t.contributors?.length ? t.contributors : t.artist ? [t.artist] : []).map(ref);
-          const seen = new Set<string>();
-          return {
-            id: String(t.id),
-            name: t.title,
-            number: t.track_position ?? i + 1,
-            disc: t.disk_number ?? 1,
-            durationMs: (t.duration ?? 0) * 1000,
-            explicit: !!t.explicit_lyrics,
-            artists: people.filter((p) => !seen.has(p.id) && seen.add(p.id)),
-          };
-        });
-        const type = typeOf(meta.record_type).type;
-        return {
-          id: String(meta.id),
-          name: meta.title,
-          cover: img(meta.cover_xl) ?? img(meta.cover_big),
-          coverSmall: img(meta.cover_big) ?? img(meta.cover_xl),
-          type,
-          year: (meta.release_date ?? '').slice(0, 4),
-          totalTracks: meta.nb_tracks ?? info.length,
-          artists: main,
-          tracks: info.sort((a, b) => a.disc - b.disc || a.number - b.number),
-          url: spotifySearch(`${meta.title} ${main[0]?.name ?? ''}`.trim()),
-        };
+        const details = new Map<number, DzRef[]>();
+        this.progress.set(id, { meta, tracks, details });
+        try {
+          await Promise.all(
+            tracks.map(async (t) => {
+              const full = await this.cache.wrap(`dz:track:${t.id}`, DAY, () => this.request<DzTrack>(`/track/${t.id}`), KV_DAYS(180));
+              details.set(t.id, full.contributors?.length ? full.contributors : (t.contributors ?? []));
+            }),
+          );
+        } finally {
+          this.progress.delete(id);
+        }
+        return this.shape(meta, tracks, details, false);
       },
       KV_DAYS(180),
     );
+  }
+
+  /** Songliste ohne Gäste (1 Anfrage) – wird auch vorgeladen */
+  private albumTracks(id: string): Promise<DzTrack[]> {
+    return this.cache.wrap(`dz:tracks:${id}`, DAY, () => this.list<DzTrack>(`/album/${encodeURIComponent(id)}/tracks`, 500), KV_DAYS(60));
+  }
+
+  /** Vorladen (billig): Albumkopf + Songliste. Beim Öffnen fehlen dann nur noch die Gäste pro Song. */
+  async prepareAlbum(id: string): Promise<void> {
+    await Promise.all([this.albumMeta(id), this.albumTracks(id)]);
+  }
+
+  /** Zwischenstand eines Albums, das gerade lädt: Songliste schon da, Gäste nur bei fertigen Songs */
+  albumSnapshot(id: string): AlbumDetail | null {
+    const p = this.progress.get(id);
+    return p ? this.shape(p.meta, p.tracks, p.details, true) : null;
+  }
+
+  /** Erst kurz auf das fertige Album warten, sonst den Zwischenstand zeigen */
+  async albumNow(id: string, waitMs: number): Promise<AlbumDetail> {
+    const full = this.getAlbum(id);
+    full.catch(() => {});
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      const left = deadline - Date.now();
+      const done = await Promise.race([full, sleep(left > 0 ? Math.min(150, left) : 150).then(() => null)]);
+      if (done) return done;
+      if (Date.now() >= deadline) {
+        const snap = this.albumSnapshot(id);
+        if (snap) return snap;
+      }
+    }
+  }
+
+  private shape(meta: DzAlbum, tracks: DzTrack[], details: Map<number, DzRef[]>, partial: boolean): AlbumDetail {
+    const main = albumArtists(meta);
+    const info: TrackInfo[] = tracks.map((t, i) => {
+      const known = details.get(t.id);
+      const people = (known?.length ? known : t.contributors?.length ? t.contributors : t.artist ? [t.artist] : []).map(ref);
+      const seen = new Set<string>();
+      return {
+        id: String(t.id),
+        name: t.title,
+        number: t.track_position ?? i + 1,
+        disc: t.disk_number ?? 1,
+        durationMs: (t.duration ?? 0) * 1000,
+        explicit: !!t.explicit_lyrics,
+        artists: people.filter((p) => !seen.has(p.id) && seen.add(p.id)),
+        ...(partial && !known ? { loading: true } : {}),
+      };
+    });
+    const type = typeOf(meta.record_type).type;
+    return {
+      id: String(meta.id),
+      name: meta.title,
+      cover: img(meta.cover_xl) ?? img(meta.cover_big),
+      coverSmall: img(meta.cover_big) ?? img(meta.cover_xl),
+      type,
+      year: (meta.release_date ?? '').slice(0, 4),
+      totalTracks: meta.nb_tracks ?? info.length,
+      artists: main,
+      tracks: info.sort((a, b) => a.disc - b.disc || a.number - b.number),
+      url: spotifySearch(`${meta.title} ${main[0]?.name ?? ''}`.trim()),
+      ...(partial ? { partial: true } : {}),
+    };
   }
 }

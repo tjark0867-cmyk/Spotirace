@@ -44,6 +44,25 @@ function cached<T>(url: string): Promise<T> {
   return promise;
 }
 
+/** Fertige Alben merken; Zwischenstände (partial) nie – die werden nachgefragt */
+const albums = new Map<string, AlbumDetail>();
+const albumRuns = new Map<string, Promise<AlbumDetail>>();
+function album(id: string, poll = false): Promise<AlbumDetail> {
+  const done = albums.get(id);
+  if (done) return Promise.resolve(done);
+  const key = poll ? `${id}?poll` : id;
+  const running = albumRuns.get(key);
+  if (running) return running;
+  const promise = fetchJson<AlbumDetail>(`/api/album/${encodeURIComponent(id)}${poll ? '?poll=1' : ''}`)
+    .then((d) => {
+      if (!d.partial) albums.set(id, d);
+      return d;
+    })
+    .finally(() => albumRuns.delete(key));
+  albumRuns.set(key, promise);
+  return promise;
+}
+
 export const api = {
   config: () => cached<AppConfig>('/api/config'),
   configFresh: () => fetchJson<AppConfig>('/api/config'),
@@ -55,7 +74,7 @@ export const api = {
   artistPage: (id: string) => cached<ArtistPage>(`/api/artist/${encodeURIComponent(id)}`),
   releases: (id: string, group: ReleaseGroup, offset: number) =>
     cached<ReleasePage>(`/api/artist/${encodeURIComponent(id)}/releases?group=${group}&offset=${offset}`),
-  album: (id: string) => cached<AlbumDetail>(`/api/album/${encodeURIComponent(id)}`),
+  album,
   forget: (prefix: string) => {
     for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key);
   },
