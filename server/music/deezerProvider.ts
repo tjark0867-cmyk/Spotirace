@@ -306,6 +306,14 @@ export class DeezerProvider implements MusicProvider {
     );
   }
 
+  /** Albumtitel des bekanntesten Artists mit diesem Namen (meiste Fans) – zum Auseinanderhalten gleichnamiger Artists */
+  async famousAlbumTitles(name: string): Promise<string[]> {
+    const top = await this.resolveArtist(name);
+    const own = await this.ownReleases(top.id);
+    const sorted = [...own.filter((a) => a.record_type === 'album'), ...own.filter((a) => a.record_type !== 'album')];
+    return sorted.slice(0, 2).map((a) => a.title);
+  }
+
   async resolveArtist(name: string): Promise<ArtistSummary> {
     const hits = await this.rawSearch(name);
     const exact = hits.filter((a) => normName(a.name) === normName(name)).sort((a, b) => (b.nb_fan ?? 0) - (a.nb_fan ?? 0))[0];
@@ -507,22 +515,17 @@ export class DeezerProvider implements MusicProvider {
 
   async getAlbum(id: string): Promise<AlbumDetail> {
     return this.cache.wrap(
-      `dz:album:${id}`,
+      `dz:album2:${id}`,
       DAY,
       async () => {
         const [meta, tracks] = await Promise.all([this.albumMeta(id), this.list<DzTrack>(`/album/${encodeURIComponent(id)}/tracks`, 500)]);
         const main = albumArtists(meta);
-        const mainId = main[0]?.id;
-        // Gäste stehen bei Deezer nur in den Song-Details → nur dort nachladen, wo es Gäste geben kann
-        const collab = (meta.contributors ?? []).length > 1 || main.length > 1;
+        // Gäste stehen bei Deezer nur in den Song-Details → für JEDEN Song nachladen (sonst fehlen Features).
+        // Klappt ein Song nicht, wird das Album nicht gespeichert (lieber beim nächsten Mal nochmal).
         const detailed = await Promise.all(
           tracks.map(async (t) => {
-            const maybeGuests = collab || String(t.artist?.id) !== mainId || FEAT_HINT.test(t.title);
-            if (!maybeGuests) return t;
-            const full = await this.cache
-              .wrap(`dz:track:${t.id}`, DAY, () => this.request<DzTrack>(`/track/${t.id}`), KV_DAYS(180))
-              .catch(() => null);
-            return full ? { ...t, contributors: full.contributors } : t;
+            const full = await this.cache.wrap(`dz:track:${t.id}`, DAY, () => this.request<DzTrack>(`/track/${t.id}`), KV_DAYS(180));
+            return { ...t, contributors: full.contributors?.length ? full.contributors : t.contributors };
           }),
         );
         const info: TrackInfo[] = detailed.map((t, i) => {

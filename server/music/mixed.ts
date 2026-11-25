@@ -59,7 +59,49 @@ export class MixedProvider implements MusicProvider {
   }
 
   searchArtists(q: string): Promise<ArtistSummary[]> {
-    return this.spotifyOr(() => this.spotify.searchArtists(q), () => this.deezer.searchArtists(q));
+    return this.spotifyOr(
+      async () => this.famousFirst(await this.spotify.searchArtists(q)),
+      () => this.deezer.searchArtists(q),
+    );
+  }
+
+  /**
+   * Gibt es mehrere Artists mit demselben Namen (z. B. drei „Favorite“), kommt der bekannteste nach oben:
+   * Deezer verrät, wer die meisten Fans hat, eines seiner Alben zeigt bei Spotify, welche ID das ist.
+   * Kostet einmalig 1 Spotify-Anfrage pro Name, danach 30 Tage gespeichert.
+   */
+  private async famousFirst(list: ArtistSummary[]): Promise<ArtistSummary[]> {
+    const groups = new Map<string, ArtistSummary[]>();
+    for (const a of list) {
+      const k = normName(a.name);
+      groups.set(k, [...(groups.get(k) ?? []), a]);
+    }
+    let out = list;
+    for (const [key, group] of groups) {
+      if (group.length < 2) continue;
+      const famousId = await this.cache
+        .wrap(
+          `mx:famous:${key}`,
+          DAY,
+          async () => {
+            const titles = await this.deezer.famousAlbumTitles(group[0].name);
+            for (const t of titles) {
+              const id = await this.spotify.findArtistByAlbum(group[0].name, t);
+              if (id) return id;
+            }
+            return '';
+          },
+          KV_DAYS(30),
+        )
+        .catch(() => '');
+      const hit = group.find((a) => a.id === famousId);
+      if (!hit) continue;
+      const first = out.findIndex((a) => normName(a.name) === key);
+      const rest = out.filter((a) => a !== hit);
+      rest.splice(first, 0, hit);
+      out = rest;
+    }
+    return out;
   }
 
   popularArtists(): Promise<PopularArtist[]> {
@@ -133,14 +175,19 @@ export class MixedProvider implements MusicProvider {
     const dz = await this.deezer.getAlbum(String(match.id)).catch(() => null);
     if (!dz || dz.tracks.length === 0) return null;
     const known = [...s.artists, ...info.known];
-    const tracks = dz.tracks.map((t) => ({
-      ...t,
-      id: posId(t.disc, t.number),
-      artists: t.artists.map((a) => {
+    const tracks = dz.tracks.map((t) => {
+      const artists = t.artists.map((a) => {
         const k = known.find((x) => same(x.name, a.name));
         return k ? { id: k.id, name: k.name } : { id: `dz:${a.id}`, name: a.name };
-      }),
-    }));
+      });
+      // Reihenfolge wie bei Spotify: Album-Künstler zuerst, dann die Gäste
+      const rank = (id: string) => {
+        const i = s.artists.findIndex((x) => x.id === id);
+        return i === -1 ? 99 : i;
+      };
+      artists.sort((x, y) => rank(x.id) - rank(y.id));
+      return { ...t, id: posId(t.disc, t.number), artists };
+    });
     // Gegenprobe: Wer das Album auf seiner Seite hat, muss auch auf einem Song stehen.
     // Sonst fehlen Deezer Angaben → lieber das echte Spotify-Album laden.
     const owners = s.artists.length === 1 && !/various artists/i.test(owner) ? s.artists : [];
@@ -167,7 +214,7 @@ export class MixedProvider implements MusicProvider {
     const info = await this.cache.peek<RelInfo>(`mx:rel:${id}`, DAY);
     if (!info) return this.exact(id);
     const viaDeezer = await this.cache
-      .wrap(`mx:dz:${id}:${info.known.length}`, DAY, async () => (await this.fromDeezer(id, info)) ?? { none: true }, KV_DAYS(60))
+      .wrap(`mx:dz2:${id}:${info.known.length}`, DAY, async () => (await this.fromDeezer(id, info)) ?? { none: true }, KV_DAYS(60))
       .catch(() => null);
     if (!viaDeezer || 'none' in viaDeezer) return this.exact(id);
     return viaDeezer as AlbumDetail;
