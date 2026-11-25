@@ -166,7 +166,7 @@ export function Home() {
             {cooldown >= 3600 ? `${Math.floor(cooldown / 3600)} Std. ${Math.round((cooldown % 3600) / 60)} Min.` : `${Math.max(1, Math.round(cooldown / 60))} Min.`}{' '}
             wieder freigegeben.{' '}
             {hybrid
-              ? 'Bis dahin kommen Profilbilder und „Erscheint auf“ von Deezer – spielen könnt ihr trotzdem.'
+              ? 'Bis dahin laufen neue Runden mit Deezer-Daten – spielen könnt ihr trotzdem.'
               : 'Danach läuft alles normal.'}
           </div>
         )}

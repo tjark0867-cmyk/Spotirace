@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { applyKnownArtists } from '../../../shared/names';
 import type { AlbumDetail, ArtistSummary, TrackInfo } from '../../../shared/types';
 import { ArrowRightIcon, ClockIcon, ExternalIcon, FlagIcon, LockIcon } from '../components/Icons';
 import { Cover } from '../components/Media';
@@ -167,7 +168,9 @@ export function AlbumView({
   onLoaded?: (album: AlbumDetail) => void;
 }) {
   const goalLabel = goalKind === 'checkpoint' ? 'Wechsel' : 'Ziel';
-  const { data, error, reload } = useAlbum(albumId);
+  const { data: raw, error, reload } = useAlbum(albumId);
+  // Songlisten von Deezer: aktuellen Artist und Ziel über den Namen erkennen (wie der Server)
+  const data = useMemo(() => (raw ? applyKnownArtists(raw, [current, target]) : null), [raw, current, target]);
   const color = useDominantColor(data?.cover, albumId);
 
   useEffect(() => {

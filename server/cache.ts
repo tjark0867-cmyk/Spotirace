@@ -98,6 +98,19 @@ export class TtlCache {
     return promise;
   }
 
+  /** Direkt ablegen (Speicher + optional Key Value) */
+  put(key: string, value: unknown, ttlMs: number, remoteTtlSeconds = 0) {
+    this.set(key, value, ttlMs);
+    if (this.remote && remoteTtlSeconds > 0) {
+      try {
+        const packed = brotliCompressSync(Buffer.from(JSON.stringify(value)), { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } });
+        this.remote.set(REMOTE_PREFIX + key, packed, remoteTtlSeconds).catch(() => {});
+      } catch {
+        /* egal */
+      }
+    }
+  }
+
   /** Nur nachsehen (Speicher, dann Key Value) – lädt nie etwas neu */
   async peek<T>(key: string, ttlMs: number): Promise<T | undefined> {
     const cached = this.get<T>(key);

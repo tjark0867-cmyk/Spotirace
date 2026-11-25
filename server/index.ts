@@ -8,6 +8,7 @@ import { MissingKeysProvider } from './music/missing';
 import { readMarket, readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
 import { DeezerProvider } from './music/deezerProvider';
+import { MixedProvider } from './music/mixed';
 import type { MusicProvider } from './music/types';
 import type { ItemKind } from '../shared/types';
 import { KvClient } from './kv';
@@ -27,7 +28,9 @@ const setup = keys.status;
 const market = readMarket();
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
 // Standard: Deezer (kein Key, kein Tageskontingent). Spotify nur noch mit MUSIC_SOURCE=spotify.
-const useSpotify = (process.env.MUSIC_SOURCE || '').trim().toLowerCase() === 'spotify';
+const source = (process.env.MUSIC_SOURCE || '').trim().toLowerCase();
+const useSpotify = source === 'spotify';
+const deezerOnly = source === 'deezer';
 
 // Dauerhafter Zwischenspeicher (Render Key Value) – optional
 const kvUrl = (process.env.REDIS_URL || process.env.KV_URL || '').trim();
@@ -49,13 +52,16 @@ if (useSpotify) for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
 if (forceDemo) {
   provider = new DemoProvider();
   console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
+} else if (deezerOnly || !(clientId && clientSecret)) {
+  provider = new DeezerProvider({ remote: kv });
+  console.log('🎧 Musikdaten: nur Deezer (ohne Key, ohne Tageskontingent)');
 } else if (!useSpotify) {
-  // Alles von Deezer; mit Spotify-Keys zusätzlich Profilbilder und „Erscheint auf“ von Spotify
-  const helper = clientId && clientSecret ? new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage }) : null;
-  spotifyHelper = helper;
-  if (helper) cooldown = () => helper.cooldownSeconds;
-  provider = new DeezerProvider({ remote: kv, spotify: helper });
-  console.log(`🎧 Musikdaten: Deezer${helper ? ' + Spotify (Profilbilder, Erscheint auf)' : ' (ohne Key, ohne Tageskontingent)'}`);
+  // Spotify zuerst (Suche, Bilder, Diskografie, Erscheint auf), Songlisten von Deezer
+  const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
+  spotifyHelper = spotify;
+  cooldown = () => spotify.cooldownSeconds;
+  provider = new MixedProvider(spotify, new DeezerProvider({ remote: kv }), kv);
+  console.log('🎧 Musikdaten: Spotify, Songlisten von Deezer (spart Kontingent)');
 } else if (clientId && clientSecret) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
   provider = spotify;

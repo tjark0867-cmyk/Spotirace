@@ -33,6 +33,7 @@ import {
   type TimeLimit,
 } from '../shared/types';
 import type { MusicProvider } from './music/types';
+import { applyKnownArtists, isPendingArtist } from '../shared/names';
 import type { UsageCounter } from './usage';
 
 const COUNTDOWN_MS = 3500;
@@ -669,6 +670,12 @@ export class GameServer {
       }
     }
 
+    // Start und Ziel müssen aus derselben Quelle kommen (z. B. nicht Spotify-Start und Deezer-Ziel)
+    const sourceOf = this.provider.idSource?.bind(this.provider);
+    if (sourceOf && new Set(route.map((a) => sourceOf(a.id))).size > 1) {
+      throw new GameError('Spotify war kurz pausiert – bitte Start und Ziel nochmal neu auswählen');
+    }
+
     const now = this.now();
     room.phase = 'countdown';
     room.startAt = now + this.countdownMs;
@@ -793,9 +800,19 @@ export class GameServer {
       if (!current) throw new GameError('Keine Position');
 
       // Server prüft: Steht der neue Artist wirklich auf einem Song mit dem aktuellen Artist?
-      const album = await this.provider.getAlbum(albumId);
-      const track = album.tracks.find((t) => t.id === trackId);
+      // (Songlisten von Deezer: aktueller Artist und Ziel werden über den Namen zugeordnet)
+      const known = [current, goal];
+      let album = applyKnownArtists(await this.provider.getAlbum(albumId), known);
+      let track = album.tracks.find((t) => t.id === trackId);
       if (!track) throw new GameError('Song nicht gefunden');
+      if (isPendingArtist(artistId)) {
+        // Artist kannte bisher nur Deezer → jetzt die echte Spotify-ID holen
+        const real = this.provider.resolveTrackArtist ? await this.provider.resolveTrackArtist(albumId, trackId, artistId) : null;
+        if (!real) throw new GameError('Diesen Artist konnte Spotify gerade nicht zuordnen – probier einen anderen Song');
+        artistId = real;
+        album = applyKnownArtists(await this.provider.getAlbum(albumId), known);
+        track = album.tracks.find((t) => t.id === trackId) ?? track;
+      }
       const ids = track.artists.map((a) => a.id);
       if (!ids.includes(current.id)) {
         // Generalschlüssel: jeder Song eines Albums, auf dem der aktuelle Artist vorkommt

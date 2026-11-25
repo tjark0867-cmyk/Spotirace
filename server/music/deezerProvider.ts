@@ -343,16 +343,23 @@ export class DeezerProvider implements MusicProvider {
   }
 
   /** Spotify-Album → dasselbe Album bei Deezer (zum Öffnen der Songs). Kein Spotify-Kontingent. */
-  private deezerAlbumFor(title: string, artist: string): Promise<DzAlbum | null> {
+  /** Ein (Spotify-)Album bei Deezer wiederfinden – Titel + Künstler, optional Songzahl als Gegenprobe */
+  findAlbum(title: string, artist: string, tracks?: number): Promise<DzAlbum | null> {
+    return this.deezerAlbumFor(title, artist, tracks);
+  }
+
+  private deezerAlbumFor(title: string, artist: string, tracks?: number): Promise<DzAlbum | null> {
     const clean = (t: string) => normName(t.replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, ''));
     return this.cache.wrap(
-      `dz:map:${normName(artist)}:${normName(title)}`,
+      `dz:map2:${normName(artist)}:${normName(title)}:${tracks ?? ''}`,
       DAY,
       async () => {
+        const sameArtist = (a: DzAlbum) => normName(a.artist?.name ?? '') === normName(artist);
+        const fits = (a: DzAlbum) => !tracks || !a.nb_tracks || Math.abs(a.nb_tracks - tracks) <= 2;
         const pick = (list: DzAlbum[]) =>
-          list.find((a) => normName(a.title) === normName(title) && normName(a.artist?.name ?? '') === normName(artist)) ??
-          list.find((a) => clean(a.title) === clean(title) && normName(a.artist?.name ?? '') === normName(artist)) ??
-          list.find((a) => clean(a.title) === clean(title)) ??
+          list.find((a) => normName(a.title) === normName(title) && sameArtist(a) && fits(a)) ??
+          list.find((a) => clean(a.title) === clean(title) && sameArtist(a) && fits(a)) ??
+          list.find((a) => clean(a.title) === clean(title) && fits(a)) ??
           null;
         const exact = await this.request<DzList<DzAlbum>>(`/search/album?q=${encodeURIComponent(`artist:"${artist}" album:"${title}"`)}&limit=10`).catch(
           () => ({ data: [] }) as DzList<DzAlbum>,

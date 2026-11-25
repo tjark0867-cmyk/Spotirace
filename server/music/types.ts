@@ -28,6 +28,10 @@ export interface MusicProvider {
   resolveArtist(name: string): Promise<ArtistSummary>;
   /** Wie viele Releases pro Kategorie auf einmal geladen werden (1 Anfrage) */
   readonly pageCount: number;
+  /** Optional: Artist aus einer Deezer-Songliste ("dz:…") in eine echte ID verwandeln */
+  resolveTrackArtist?(albumId: string, trackId: string, artistId: string): Promise<string | null>;
+  /** Optional: Quelle einer ID (Start und Ziel müssen aus derselben Quelle stammen) */
+  idSource?(id: string): string;
 }
 
 export class ProviderError extends Error {
