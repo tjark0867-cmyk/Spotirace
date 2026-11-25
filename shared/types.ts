@@ -329,6 +329,8 @@ export interface AppConfig {
   cooldownSeconds: number;
   /** Verbrauch des Spotify-Kontingents (null im Demo-Modus) */
   usage: UsageInfo | null;
+  /** Deezer + Spotify (Profilbilder, Erscheint auf): Spotify-Sperre hält das Spiel nicht auf */
+  hybrid?: boolean;
 }
 
 export interface UsageInfo {

@@ -53,6 +53,7 @@ if (forceDemo) {
   // Alles von Deezer; mit Spotify-Keys zusätzlich Profilbilder und „Erscheint auf“ von Spotify
   const helper = clientId && clientSecret ? new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage }) : null;
   spotifyHelper = helper;
+  if (helper) cooldown = () => helper.cooldownSeconds;
   provider = new DeezerProvider({ remote: kv, spotify: helper });
   console.log(`🎧 Musikdaten: Deezer${helper ? ' + Spotify (Profilbilder, Erscheint auf)' : ' (ohne Key, ohne Tageskontingent)'}`);
 } else if (clientId && clientSecret) {
@@ -91,6 +92,7 @@ const handler = createHttpHandler(provider, async () => {
     setup: provider.name === 'spotify' || provider.name === 'missing' ? setup : null,
     cooldownSeconds: cooldown(),
     usage: provider.name === 'spotify' || spotifyHelper ? await usage.info() : null,
+    hybrid: !!spotifyHelper,
   };
 });
 const server = createServer((req, res) => void handler(req, res));

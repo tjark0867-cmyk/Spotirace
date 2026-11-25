@@ -80,6 +80,7 @@ export function Home() {
   const [missingKeys, setMissingKeys] = useState(false);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [hybrid, setHybrid] = useState(false);
   const [usedToday, setUsedToday] = useState<number | null>(null);
   const [popular, setPopular] = useState<PopularArtist[]>([]);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -92,9 +93,10 @@ export function Home() {
         setMissingKeys(c.missingKeys);
         setSetup(c.setup);
         setCooldown(c.cooldownSeconds ?? 0);
+        setHybrid(!!c.hybrid);
         setUsedToday(c.usage?.today ?? null);
         // Hintergrundbilder nur, wenn Spotify bereit ist (die Vorschläge sind ohnehin gespeichert)
-        if (!c.missingKeys && !(c.cooldownSeconds > 0)) api.popular().then(setPopular).catch(() => {});
+        if (!c.missingKeys && (c.hybrid || !(c.cooldownSeconds > 0))) api.popular().then(setPopular).catch(() => {});
       })
       .catch(() => {});
   }, []);
@@ -162,7 +164,10 @@ export function Home() {
           <div className="mt-6 w-full rounded-lg border border-[#ffc864]/30 bg-[#ffc864]/10 px-4 py-3 text-sm text-[#ffe2a8]">
             <b>Spotify macht gerade Pause für diese App.</b> Das Kontingent ist aufgebraucht und wird in ca.{' '}
             {cooldown >= 3600 ? `${Math.floor(cooldown / 3600)} Std. ${Math.round((cooldown % 3600) / 60)} Min.` : `${Math.max(1, Math.round(cooldown / 60))} Min.`}{' '}
-            wieder freigegeben. Danach läuft alles normal.
+            wieder freigegeben.{' '}
+            {hybrid
+              ? 'Bis dahin kommen Profilbilder und „Erscheint auf“ von Deezer – spielen könnt ihr trotzdem.'
+              : 'Danach läuft alles normal.'}
           </div>
         )}
         {demo && (

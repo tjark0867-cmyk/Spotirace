@@ -29,7 +29,7 @@ export function UsageCard({ usage, players, cooldownSeconds }: { usage: UsageInf
 
       <div className="space-y-1.5 text-sm text-sp-sub">
         {blocked ? (
-          <p className="font-semibold text-[#ffc864]">Spotify macht gerade Pause – das Kontingent ist aufgebraucht.</p>
+          <p className="font-semibold text-[#ffc864]">Spotify macht gerade Pause – bis dahin kommen Profilbilder und „Erscheint auf“ von Deezer.</p>
         ) : rounds !== null ? (
           <p>
             Gerade gehen noch ungefähr <b className="text-white">{rounds === 0 ? 'keine' : rounds} {rounds === 1 ? 'Runde' : 'Runden'}</b> mit {players}{' '}

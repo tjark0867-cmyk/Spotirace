@@ -434,6 +434,29 @@ export class GameServer {
       if (artist && which === 'start') this.warm(artist.id);
     }
     this.broadcast(room);
+    // Vollständige Artist-Daten nachladen (z. B. Spotify-Profilbild statt Suchbild)
+    if (artist) {
+      this.provider
+        .getArtist(artist.id)
+        .then((full) => {
+          const slots: Array<[() => ArtistSummary | null, (a: ArtistSummary) => void]> = [
+            [() => room.start, (a) => (room.start = a)],
+            [() => room.target, (a) => (room.target = a)],
+            [() => room.checkpoints[0], (a) => (room.checkpoints[0] = a)],
+            [() => room.checkpoints[1], (a) => (room.checkpoints[1] = a)],
+          ];
+          let changed = false;
+          for (const [get, set] of slots) {
+            const cur = get();
+            if (cur && cur.id === full.id && (cur.image !== full.image || cur.genres.join() !== full.genres.join())) {
+              set({ ...cur, image: full.image, imageSmall: full.imageSmall, genres: full.genres });
+              changed = true;
+            }
+          }
+          if (changed && room.phase === 'lobby') this.broadcast(room);
+        })
+        .catch(() => {});
+    }
   }
 
   /** Start, Wechselpunkte und Ziel müssen verschiedene Artists sein */
