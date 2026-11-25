@@ -7,6 +7,7 @@ import { DemoProvider } from './music/demo';
 import { MissingKeysProvider } from './music/missing';
 import { readMarket, readSpotifyKeys } from './setup';
 import { SpotifyProvider } from './music/spotify';
+import { DeezerProvider } from './music/deezerProvider';
 import type { MusicProvider } from './music/types';
 import type { ItemKind } from '../shared/types';
 import { KvClient } from './kv';
@@ -25,6 +26,8 @@ const { clientId, clientSecret } = keys;
 const setup = keys.status;
 const market = readMarket();
 const forceDemo = process.env.DEMO === '1' || process.env.DEMO === 'true';
+// Standard: Deezer (kein Key, kein Tageskontingent). Spotify nur noch mit MUSIC_SOURCE=spotify.
+const useSpotify = (process.env.MUSIC_SOURCE || '').trim().toLowerCase() === 'spotify';
 
 // Dauerhafter Zwischenspeicher (Render Key Value) – optional
 const kvUrl = (process.env.REDIS_URL || process.env.KV_URL || '').trim();
@@ -41,10 +44,13 @@ const usage = new UsageCounter(kv);
 let provider: MusicProvider;
 let recheckLogin = () => {};
 let cooldown = () => 0;
-for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
+if (useSpotify) for (const hint of setup.hints) console.warn(`ℹ️  ${hint}`);
 if (forceDemo) {
   provider = new DemoProvider();
   console.log('🧪 Demo-Modus aktiv (DEMO=1) – erfundene Artists, kein Spotify.');
+} else if (!useSpotify) {
+  provider = new DeezerProvider({ remote: kv });
+  console.log('🎧 Musikdaten: Deezer (ohne Key, ohne Tageskontingent)');
 } else if (clientId && clientSecret) {
   const spotify = new SpotifyProvider(clientId, clientSecret, market, { remote: kv, usage });
   provider = spotify;
@@ -77,8 +83,8 @@ const handler = createHttpHandler(provider, async () => {
   const isDemo = provider.name === 'demo';
   return {
     demo: isDemo,
-    missingKeys: !isDemo && (provider.name === 'missing' || setup.login === 'failed'),
-    setup: isDemo ? null : setup,
+    missingKeys: provider.name === 'missing' || (provider.name === 'spotify' && setup.login === 'failed'),
+    setup: provider.name === 'spotify' || provider.name === 'missing' ? setup : null,
     cooldownSeconds: cooldown(),
     usage: provider.name === 'spotify' ? await usage.info() : null,
   };

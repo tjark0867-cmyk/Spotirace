@@ -266,7 +266,7 @@ export function ArtistView({
               'Demo-Daten · erfundene Artists'
             ) : (
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                Musikdaten von Spotify
+                Musikdaten von Deezer
                 {data.artist.url && (
                   <a href={data.artist.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-white hover:underline">
                     {data.artist.name} auf Spotify öffnen <ExternalIcon size={12} />

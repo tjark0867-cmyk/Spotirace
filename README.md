@@ -114,7 +114,11 @@ Nach jedem 2. Sprung öffnet sich eine Item-Kiste (höchstens 2 Items im Inventa
 
 In der Staffel kann man nur den aktiven Läufer des anderen Teams angreifen; übrige Items wandern mit dem Stab zum nächsten Läufer.
 
-## 5. Gut zu wissen: Spotify-Einschränkungen
+## 5. Gut zu wissen: Datenquelle
+
+Die Musikdaten (Artists, Bilder, Alben, Songs) kommen von der **Deezer-API** – ohne Key und ohne Tageskontingent. Die Oberfläche sieht genauso aus wie vorher; „Auf Spotify öffnen“ springt zur Spotify-Suche. Wer doch wieder Spotify will, setzt bei Render `MUSIC_SOURCE=spotify` (dann gelten die Einschränkungen unten).
+
+### Spotify-Einschränkungen (nur mit MUSIC_SOURCE=spotify)
 
 Spotify hat 2026 die Regeln für Apps im *Development Mode* verschärft. Das Spiel ist darauf ausgelegt:
 

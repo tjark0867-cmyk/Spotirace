@@ -225,7 +225,7 @@ export function PeekCard({ state }: { state: RoomState }) {
               </span>
             ))
           ) : (
-            <span className="text-xs font-semibold text-[#2a2f5a]/60">Spotify kennt keine Genres für diesen Artist</span>
+            <span className="text-xs font-semibold text-[#2a2f5a]/60">Keine Genres bekannt – schau auf die Cover</span>
           )}
         </div>
         {peek.covers.length > 0 && (

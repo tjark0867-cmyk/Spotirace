@@ -276,7 +276,7 @@ export function Home() {
 
         <p className="mt-8 text-center text-xs text-sp-muted">
           {usedToday !== null && <>Spotify heute: {usedToday.toLocaleString('de-DE')} Anfragen · </>}
-          Musikdaten von Spotify · Fanprojekt, nicht mit Spotify verbunden
+          Musikdaten von Deezer · Fanprojekt, nicht mit Spotify verbunden
         </p>
       </div>
     </div>
